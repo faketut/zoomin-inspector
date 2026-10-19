@@ -89,6 +89,9 @@ Simple, reproducible, one-command:
 3. One short-lived **c7i.xlarge** with vanilla `pip install opencv-python-headless`
    as the benchmark baseline — same container, same script, three configs.
 
+Full step-by-step runbook (account setup → AMI subscribe → 3-config benchmark →
+judges' endpoint → cleanup): [docs/AWS_DEPLOY.md](docs/AWS_DEPLOY.md).
+
 ```bash
 # on each instance:
 docker compose up -d

@@ -17,13 +17,38 @@ import argparse
 import csv
 import glob
 import os
+import sys
 import time
+import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cv2
 
 from zoomin.agent import run_inspection
 from zoomin.config import InspectorConfig
 from zoomin.scoring import CoarseScorer
+
+
+def _instance_meta() -> dict:
+    """Best-effort EC2 metadata (IMDSv2) for reproducible benchmark provenance."""
+    meta = {"instance_type": "unknown", "ami_id": "unknown"}
+    try:
+        token_req = urllib.request.Request(
+            "http://169.254.169.254/latest/api/token",
+            headers={"X-aws-ec2-metadata-token-ttl-seconds": "60"},
+            method="PUT",
+        )
+        token = urllib.request.urlopen(token_req, timeout=2).read().decode()
+        for key in ("instance-type", "ami-id"):
+            req = urllib.request.Request(
+                f"http://169.254.169.254/latest/meta-data/{key}",
+                headers={"X-aws-ec2-metadata-token": token},
+            )
+            meta[key.replace("-", "_")] = urllib.request.urlopen(req, timeout=2).read().decode()
+    except Exception:
+        pass  # not on EC2 (local dev) — provenance stays "unknown"
+    return meta
 
 
 def main():
@@ -35,7 +60,11 @@ def main():
     ap.add_argument("--out", default="bench/results.csv")
     args = ap.parse_args()
 
-    paths = sorted(glob.glob(os.path.join(args.images, "*")))
+    if os.path.isdir(args.images):
+        # MVTec-style layout: <category>/test/<good|defect_type>/*.png — recurse.
+        paths = sorted(glob.glob(os.path.join(args.images, "**", "*"), recursive=True))
+    else:
+        paths = sorted(glob.glob(args.images))
     paths = [p for p in paths if p.lower().endswith((".png", ".jpg", ".jpeg", ".bmp"))]
     assert paths, f"no images found under {args.images}"
 
@@ -58,9 +87,12 @@ def main():
     images_per_sec = n / elapsed
     cost_per_10k = args.dollars_per_hour * (elapsed / n * 10_000) / 3600
 
+    meta = _instance_meta()
     row = {
         "config": args.config,
         "opencv": cv2.__version__,
+        "instance_type": meta["instance_type"],
+        "ami_id": meta["ami_id"],
         "n_images": n,
         "ms_per_image": round(ms_per_image, 2),
         "images_per_sec": round(images_per_sec, 2),
