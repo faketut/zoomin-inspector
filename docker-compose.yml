@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - ZOOMIN_DATA_DIR=/app/data
+
+  ui:
+    build: .
+    command: ["python", "-m", "app.ui", "--server-name", "0.0.0.0"]
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - api

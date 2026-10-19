@@ -1,0 +1,14 @@
+# Pinned 2026-10-19 on Python 3.12 / x86_64 (pip freeze). Regenerate with:
+#   pip freeze | grep -iE 'opencv|numpy|fastapi|uvicorn|multipart|pydantic|gradio|huggingface|annotated|anyio|starlette|httpx'
+annotated-types==0.8.0
+anyio==4.15.1
+fastapi==0.149.0
+gradio==6.30.0
+httpx==0.28.1
+huggingface_hub==2.2.0
+numpy==2.5.4
+opencv-python-headless==5.0.0.93
+pydantic==2.14.1
+python-multipart==0.0.32
+starlette==1.9.0
+uvicorn==0.54.0
