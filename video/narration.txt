@@ -1,0 +1,21 @@
+# ZoomIn Inspector demo narration — v1 (draft). One block per slide.
+# Numbers spelled out for TTS. S5 is AWS-setup narration; re-record when EC2
+# benchmark numbers land (swap segment 5 only).
+
+--- S1
+ZoomIn Inspector. An agentic visual defect inspector that spends a fixed zoom budget the way a human inspector spends attention.
+
+--- S2
+Whole-image classifiers either downscale the defect away, or run expensive detectors everywhere. A human inspector does the opposite: scan the overview, zoom into the suspicious regions, look again when unsure. ZoomIn is an agent loop that does exactly that, under an explicit budget of eight crops, on CPU only, built with OpenCV five.
+
+--- S3
+Under the hood, two engineering choices matter. One: anomaly scores in absolute units. Our default scorer fits a per-pixel Gaussian over normal training images and scores every pixel in standard deviations — never re-normalized per image. Two: crop inspection reuses an aligned slice of the full-image heatmap, because a position-sensitive scorer compared against the wrong pixel statistics when we naively re-scored crops. And we keep the honest lesson: our first attempt used per-image normalization, and every bottle — good or bad — was flagged defect. Zero point four four. Removing it was the whole fix.
+
+--- S4
+On the MVTec anomaly dataset, bottle category: zero point nine six one AUROC, precision one point zero — all twenty good bottles passed with zero false alarms — recall zero point seven nine four. The misses are genuinely hard: low-contrast contamination and small breaks whose signal overlaps normal reflection variation. Those ambiguous cases are not guessed. They are escalated to a human — ten point eight percent of images. On synthetic controls: AUROC one point zero, fifteen point six milliseconds per image.
+
+--- S5
+The cloud story is the deployment. One container serves the API and the UI, running on AWS Graviton from the official OpenCV Cloud Optimized AMI — the same Graviton two family the listing is tested against, since we are competing for the Best Use of COOL prize. A health endpoint reports the exact OpenCV version on the instance as proof. And the benchmark harness runs the same script, on the same images, three ways: COOL on Graviton, vanilla OpenCV on Graviton, vanilla on x eighty-six — timing, throughput and cost per ten thousand images. The same pipeline then measures transistor and capsule on the instance — those numbers complete the report.
+
+--- S6
+ZoomIn assists quality engineers; it never replaces them. The escalation path exists because a silent wrong call costs more than an honest I don't know — which is also why the competition's required failure cases are in our report, not hidden. It runs on cheap CPU for factories that cannot afford GPU inspection rigs. Limitation, stated plainly: the classical scorer is a baseline — fine textures want the learned scorer, whose OpenCV five DNN hook is already in the repo. ZoomIn Inspector: inspect like a human, spend like a miser.

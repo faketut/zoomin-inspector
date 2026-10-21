@@ -7,3 +7,5 @@ out/
 bench/*.csv
 .env
 .DS_Store
+video/segments/
+video/*.mp3

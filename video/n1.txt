@@ -1,0 +1,1 @@
+ZoomIn Inspector. An agentic visual defect inspector that spends a fixed zoom budget the way a human inspector spends attention.

@@ -1,0 +1,1 @@
+Whole-image classifiers either downscale the defect away, or run expensive detectors everywhere. A human inspector does the opposite: scan the overview, zoom into the suspicious regions, look again when unsure. ZoomIn is an agent loop that does exactly that, under an explicit budget of eight crops, on CPU only, built with OpenCV five.
