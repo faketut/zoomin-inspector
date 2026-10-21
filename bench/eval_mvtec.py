@@ -3,6 +3,11 @@
 Runs the full agent loop on every test image under data/mvtec/<cat>/test/
 and reports image-level detection metrics per category and overall.
 
+Default scorer is NormalityScorer, fit on the category's NORMAL training
+images (--train data/mvtec/<cat>/train/good, or a prefitted --model .npz):
+per-pixel Gaussian, score in absolute std-deviation units. CoarseScorer
+(single-image heuristic, no train data) remains available via --coarse.
+
 Image-level rule (honest, fixed before seeing data):
   score  = max region inspect score (0.0 when no region proposed)
   pred   = DEFECT if any region verdict is DEFECT else OK
@@ -10,11 +15,13 @@ Image-level rule (honest, fixed before seeing data):
    not as a defect prediction.)
 
 Usage:
-  .venv/bin/python bench/eval_mvtec.py --data data/mvtec --out bench/eval_results.csv
+  .venv/bin/python bench/eval_mvtec.py --data data/mvtec --train data/mvtec_train \
+      --out bench/eval_results.csv
 """
 
 import argparse
 import csv
+import glob
 import os
 import sys
 import time
@@ -26,7 +33,7 @@ import numpy as np
 
 from zoomin.agent import run_inspection
 from zoomin.config import InspectorConfig
-from zoomin.scoring import CoarseScorer
+from zoomin.scoring import CoarseScorer, NormalityScorer
 
 
 def auroc(scores, labels):
@@ -61,10 +68,49 @@ def main():
     ap.add_argument("--data", default="data/mvtec")
     ap.add_argument("--out", default="bench/eval_results.csv")
     ap.add_argument("--budget", type=int, default=8)
+    ap.add_argument("--train", default=None,
+                    help="train-good root, e.g. /tmp/mvtec_train "
+                         "(expects <cat>/train/good/*.png); fits NormalityScorer per category")
+    ap.add_argument("--model", default=None,
+                    help="prefitted NormalityScorer .npz (single category runs)")
+    ap.add_argument("--model-out", default=None,
+                    help="where to save the fitted .npz model(s)")
+    ap.add_argument("--coarse", action="store_true",
+                    help="use CoarseScorer instead of NormalityScorer (no train data needed)")
     args = ap.parse_args()
 
-    config = InspectorConfig(crop_budget=args.budget)
-    scorer = CoarseScorer()
+    scorers = {}  # category -> scorer
+    configs = {}  # category -> config
+    if args.coarse:
+        default_scorer, default_config = CoarseScorer(), InspectorConfig(
+            crop_budget=args.budget, heat_threshold=0.15,
+            defect_threshold=0.55, unsure_threshold=0.20)
+    elif args.model:
+        default_scorer = NormalityScorer.load(args.model)
+        default_config = InspectorConfig(crop_budget=args.budget)
+    else:
+        if not args.train:
+            raise SystemExit("need --train <train-good root>, --model <model.npz>, or --coarse")
+        default_scorer, default_config = None, InspectorConfig(crop_budget=args.budget)
+
+    def scorer_for(cat):
+        if default_scorer is not None:
+            return default_scorer, default_config
+        if cat not in scorers:
+            paths = sorted(glob.glob(os.path.join(args.train, cat, "train", "good", "*.png")))
+            if not paths:
+                raise SystemExit(f"no train-good images for category {cat} under {args.train}")
+            print(f"fitting NormalityScorer on {len(paths)} normal images ({cat}) ...")
+            sc = NormalityScorer.fit(paths)
+            if args.model_out:
+                mp = args.model_out if args.model_out.endswith(".npz") else \
+                    os.path.join(args.model_out, f"{cat}.npz")
+                os.makedirs(os.path.dirname(mp) or ".", exist_ok=True)
+                sc.save(mp)
+                print(f"  saved {mp}")
+            scorers[cat] = sc
+            configs[cat] = InspectorConfig(crop_budget=args.budget)
+        return scorers[cat], configs[cat]
     rows = []
     per_cat = {}
 
@@ -72,6 +118,7 @@ def main():
     print(f"{len(items)} test images")
     t_all = time.perf_counter()
     for i, (cat, defect, label, path) in enumerate(items):
+        scorer, config = scorer_for(cat)
         img = cv2.imread(path)
         t0 = time.perf_counter()
         rep = run_inspection(img, config=config, scorer=scorer)

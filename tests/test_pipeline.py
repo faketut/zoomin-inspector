@@ -37,7 +37,12 @@ def main():
     assert cv2.__version__.split(".")[0] == "5", f"need OpenCV 5, got {cv2.__version__}"
     print(f"opencv {cv2.__version__} OK")
 
-    config = InspectorConfig(crop_budget=8)
+    # NOTE: default config thresholds are calibrated for NormalityScorer
+    # (z / std-deviation units). CoarseScorer is the no-train-data fallback;
+    # its absolute heat lives in [0, ~1], so it needs its own thresholds —
+    # passed explicitly here to keep the smoke test honest.
+    config = InspectorConfig(crop_budget=8, heat_threshold=0.15,
+                             defect_threshold=0.55, unsure_threshold=0.20)
     scorer = CoarseScorer()
 
     bad = make_part(defect=True)

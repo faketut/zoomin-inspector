@@ -27,7 +27,7 @@ import numpy as np
 
 from . import report as report_mod
 from .config import InspectorConfig
-from .scoring import CoarseScorer
+from .scoring import CoarseScorer, NormalityScorer
 from .tools import inspect_crop, scan_overview, strongest_sub_box, zoom_crop, Box
 
 
@@ -119,7 +119,13 @@ def run_inspection(image: np.ndarray, config: InspectorConfig = None,
              "crop_shape": list(crop.shape)},
             f"Region {i} heat={box.heat:.2f} — zooming in for close inspection.")
 
-        result = inspect_crop(crop, config=config, patchcore=patchcore)
+        # Aligned heat slice: the full-image heatmap restricted to this crop's
+        # footprint (same pixel extents as `crop`). Never re-run a
+        # position-sensitive scorer on the crop itself.
+        heat_crop = heat[padded.y : padded.y + padded.h,
+                         padded.x : padded.x + padded.w]
+        result = inspect_crop(crop, config=config, patchcore=patchcore,
+                              scorer=scorer, heat=heat_crop)
         log("inspect_crop",
             {"region_id": i},
             {"score": round(result.score, 4), "n_contours": result.n_contours,
@@ -139,14 +145,17 @@ def run_inspection(image: np.ndarray, config: InspectorConfig = None,
                 sw, sh = int(crop.shape[1] * config.rezoom_shrink), int(crop.shape[0] * config.rezoom_shrink)
                 cx, cy = sub.x + sub.w // 2, sub.y + sub.h // 2
                 tight = Box(max(0, cx - sw // 2), max(0, cy - sh // 2), sw, sh, sub.heat)
-                crop2, _ = zoom_crop(crop, tight, padding=0.1)
+                crop2, padded2 = zoom_crop(crop, tight, padding=0.1)
                 log("zoom_crop",
                     {"region_id": i, "replan": True,
                      "box": [tight.x, tight.y, tight.w, tight.h]},
                     {"crop_shape": list(crop2.shape)},
                     f"Region {i} ambiguous ({result.score:.2f}) — re-zooming tighter "
                     f"instead of guessing.")
-                result2 = inspect_crop(crop2, config=config, patchcore=patchcore)
+                heat2 = heat_crop[padded2.y : padded2.y + padded2.h,
+                                  padded2.x : padded2.x + padded2.w]
+                result2 = inspect_crop(crop2, config=config, patchcore=patchcore,
+                                       scorer=scorer, heat=heat2)
                 log("inspect_crop",
                     {"region_id": i, "replan": True},
                     {"score": round(result2.score, 4), "n_contours": result2.n_contours},
@@ -185,13 +194,22 @@ def main():
     ap.add_argument("image", help="input image path")
     ap.add_argument("--out", default="out", help="output directory")
     ap.add_argument("--budget", type=int, default=8, help="crop budget")
+    ap.add_argument("--model", default=None,
+                    help="NormalityScorer .npz model (fit on normal images). "
+                         "Without it, falls back to CoarseScorer with its own thresholds.")
     args = ap.parse_args()
 
     image = cv2.imread(args.image)
     if image is None:
         raise SystemExit(f"cannot read image: {args.image}")
-    config = InspectorConfig(crop_budget=args.budget)
-    rep = run_inspection(image, config=config, scorer=CoarseScorer())
+    if args.model:
+        config = InspectorConfig(crop_budget=args.budget)  # z-unit defaults
+        scorer = NormalityScorer.load(args.model)
+    else:
+        config = InspectorConfig(crop_budget=args.budget, heat_threshold=0.15,
+                                 defect_threshold=0.55, unsure_threshold=0.20)
+        scorer = CoarseScorer()
+    rep = run_inspection(image, config=config, scorer=scorer)
 
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "report.json"), "w") as f:

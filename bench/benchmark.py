@@ -27,7 +27,7 @@ import cv2
 
 from zoomin.agent import run_inspection
 from zoomin.config import InspectorConfig
-from zoomin.scoring import CoarseScorer
+from zoomin.scoring import CoarseScorer, NormalityScorer
 
 
 def _instance_meta() -> dict:
@@ -58,6 +58,9 @@ def main():
     ap.add_argument("--dollars-per-hour", type=float, default=0.0)
     ap.add_argument("--budget", type=int, default=8)
     ap.add_argument("--out", default="bench/results.csv")
+    ap.add_argument("--model", default=None,
+                    help="NormalityScorer .npz model; without it uses CoarseScorer "
+                         "with its own (non-z) thresholds")
     args = ap.parse_args()
 
     if os.path.isdir(args.images):
@@ -68,8 +71,15 @@ def main():
     paths = [p for p in paths if p.lower().endswith((".png", ".jpg", ".jpeg", ".bmp"))]
     assert paths, f"no images found under {args.images}"
 
-    scorer = CoarseScorer()
-    config = InspectorConfig(crop_budget=args.budget)
+    if args.model:
+        scorer = NormalityScorer.load(args.model)
+        config = InspectorConfig(crop_budget=args.budget)  # z-unit defaults
+    else:
+        # CoarseScorer fallback: its absolute heat lives in [0, ~1], so the
+        # z-calibrated defaults would never fire — use its own thresholds.
+        scorer = CoarseScorer()
+        config = InspectorConfig(crop_budget=args.budget, heat_threshold=0.15,
+                                 defect_threshold=0.55, unsure_threshold=0.20)
     # Warmup (page caches, one-time inits) — not counted.
     warm = cv2.imread(paths[0])
     run_inspection(warm, config=config, scorer=scorer)

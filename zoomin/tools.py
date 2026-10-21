@@ -66,11 +66,25 @@ def zoom_crop(image: np.ndarray, box: Box, padding: float = 0.15) -> tuple[np.nd
     return image[y0:y1, x0:x1].copy(), padded
 
 
-def _defect_mask(crop_gray: np.ndarray, min_area: int) -> np.ndarray:
-    """Classical defect segmentation: Otsu on high-frequency residual + morphology."""
-    blur = cv2.GaussianBlur(crop_gray, (0, 0), 3)
-    residual = cv2.absdiff(crop_gray, blur)
-    _, binary = cv2.threshold(residual, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+def _defect_mask(crop_gray: np.ndarray, min_area: int,
+                 deviation_floor: float = 0.12, median_ksize: int = 31) -> np.ndarray:
+    """Classical defect segmentation: absolute median-deviation + morphology.
+
+    Otsu on a high-frequency residual was tried first and failed on real data:
+    Otsu always splits into two classes, so even clean glass texture produced
+    a mask (AUROC 0.44 on MVTec bottle, everything flagged). Calibration
+    against ground-truth masks (2026-10-20) showed the median-filter deviation
+    separates in its tail — defect p99 ~0.29 vs clean p99 ~0.14 — while the
+    high-frequency residual does not (Otsu settled at 5-9 gray levels even on
+    defect images). Hence an ABSOLUTE floor: a clean crop stays empty, and a
+    real defect's connected region survives morphology.
+    """
+    k = min(median_ksize, (min(crop_gray.shape[:2]) // 2) * 2 + 1)
+    k = max(k, 3)
+    background = cv2.medianBlur(crop_gray, k)
+    dev = cv2.absdiff(crop_gray, background).astype(np.float32) / 255.0
+    _, binary = cv2.threshold(dev, deviation_floor, 255, cv2.THRESH_BINARY)
+    binary = binary.astype(np.uint8)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
     n, labels, stats, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
@@ -82,23 +96,48 @@ def _defect_mask(crop_gray: np.ndarray, min_area: int) -> np.ndarray:
 
 
 def inspect_crop(crop: np.ndarray, config: InspectorConfig = None,
-                 patchcore=None) -> InspectResult:
+                 patchcore=None, scorer=None, heat=None) -> InspectResult:
     """Tool 3 — inspect one crop.
 
-    Classical path (always available): defect mask via Otsu residual + morphology;
-    score = defect pixel fraction, boosted by contour count.
+    With an aligned ``heat`` slice (the scorer's full-image heatmap restricted
+    to this crop's footprint — the normal case): score = peak heat inside the
+    crop, in the scorer's absolute units (z / std-deviations for
+    NormalityScorer). The heat slice MUST come from the full-image heatmap;
+    re-running a position-sensitive scorer (e.g. NormalityScorer) on the crop
+    itself would compare it against the wrong pixel statistics.
+    With a scorer but no heat slice (translation-invariant scorers only):
+    score = peak of scorer.score(crop).
+    Without a scorer: falls back to the classical deviation-mask path
+    (fraction of mask pixels, boosted by contour count).
     Optional: ``patchcore`` adapter (see patchcore_adapter.py) overrides/augments
     the score with a learned anomaly score — pass ``None`` to skip.
     """
     config = config or InspectorConfig()
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop
-    mask = _defect_mask(gray, config.min_defect_area)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    frac = float(mask.mean() / 255.0)
-    # Cap the contour-count term: a speckly mask must not score high on count alone.
-    score = min(1.0, frac * 4.0 + 0.08 * min(len(contours), 5))
-
-    detail = {"classical_score": score, "defect_fraction": frac}
+    if heat is not None and heat.shape[:2] != gray.shape[:2]:
+        heat = None  # misaligned slice — fall back to the scorer path
+    if heat is not None:
+        score = float(np.max(heat))
+        mask = (heat > config.unsure_threshold).astype(np.uint8) * 255
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        detail = {"heat_max": score}
+    elif scorer is not None:
+        heat = scorer.score(gray)
+        score = float(heat.max())
+        mask = (heat > config.unsure_threshold).astype(np.uint8) * 255
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        detail = {"heat_max": score}
+    else:
+        mask = _defect_mask(gray, config.min_defect_area,
+                            deviation_floor=config.deviation_floor)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        frac = float(mask.mean() / 255.0)
+        # Cap the contour-count term: a speckly mask must not score high on count
+        # alone. The count term only applies when a real mask area exists, so a
+        # few stray contours on an otherwise empty mask cannot push a clean
+        # crop over threshold.
+        score = min(1.0, frac * 4.0 + (0.08 * min(len(contours), 5) if frac > 0.002 else 0.0))
+        detail = {"classical_score": score, "defect_fraction": frac}
     if patchcore is not None and patchcore.available():
         learned = float(patchcore.score_crop(crop))
         detail["patchcore_score"] = learned
