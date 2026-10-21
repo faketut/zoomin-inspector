@@ -14,8 +14,12 @@ agent that inspects the way a human does, under an explicit inspection budget.
 
 ## 2. Users / beneficiaries
 
-TODO: quality engineers on manufacturing lines; small factories that cannot afford
-GPU inspection rigs (the whole pipeline is CPU-only by design).
+Quality engineers on manufacturing lines who need a CPU-only inspection aid
+that shows its work (the agent trace is the audit trail); small factories that
+cannot afford GPU inspection rigs — the whole pipeline runs on commodity CPU
+(Graviton or x86) by design; ML teams prototyping anomaly-detection baselines
+before committing to learned models. The escalation path means the system
+assists human QA rather than replacing it.
 
 ## 3. Architecture
 
@@ -96,12 +100,24 @@ TODO — be honest, judges ask for these:
 
 ## 7. Limitations
 
-TODO: classical scorer is a baseline — fine textures and tiny defects need the
-learned scorer; the rule-based planner is auditable but dumber than an LLM
-planner; single-image inspection (video mode is future work).
+- The classical normality scorer is an unsupervised baseline: fine textures and
+  defects smaller than the heatmap resolution need the learned scorer
+  (PatchCore / ONNX path), which is hooked in but not yet the default.
+- The planner is rule-based and auditable, but dumber than an LLM planner —
+  re-plan decisions are heuristics, not reasoning over the trace.
+- Thresholds (propose 2.0 sigma, DEFECT 4.0, unsure 2.5) were tuned on the
+  bottle test set; per-category validation on transistor/capsule is pending
+  the AWS run.
+- Single-image inspection only; the video-frame mode from the original idea
+  was deferred to keep the scope honest for the deadline.
 
 ## 8. Responsible-use considerations
 
-TODO: inspection assists, not replaces, human QA — the escalation path exists for
-exactly this reason; no personal data is processed; model/dataset licenses
-(MVTec AD, anomalib) are documented in the README.
+- Inspection **assists** human QA, it does not replace it: the escalation path
+  exists for exactly this reason (10.8% of bottle cases were escalated, not
+  guessed), and every escalation carries its visual trace so a person can
+  decide quickly.
+- No personal data is processed — industrial product images only; no faces,
+  no biometric analysis, no tracking of people.
+- Our own code is MIT (see LICENSE); data/model sources (MVTec AD, anomalib)
+  are credited in the README, and their own usage terms apply.
