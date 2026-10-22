@@ -53,9 +53,32 @@ Gradio UI; the agent loop (`zoomin/agent.py`) orchestrates five tools
 
 ## 5. AWS deployment
 
-TODO: S3 bucket layout; EC2 c7g.xlarge from the COOL AMI running
-`docker compose up`; security groups; how judges reach the endpoint.
-`GET /health` returns the exact `cv2.__version__` on the instance as COOL evidence.
+Deployed and verified 2026-10-22 in `us-east-1` (account's own AWS, Marketplace
+subscription "Cloud Optimized OpenCV for AWS Graviton4", 7-day free trial).
+
+- **Graviton instance**: `c8g.xlarge` (Graviton4, 4 vCPU / 8 GB) from the COOL
+  Marketplace AMI `ami-01db31139bc5615d8` ("COOL-Graviton4-v2"). The COOL runtime
+  lives at `/opt/cool`; its venv must be *activated* (activation sets
+  `PYTHONPATH=/opt/cool/python_3.12/site-packages/cv2/python-3.12` and
+  `LD_LIBRARY_PATH=/opt/cool/cpp_sdk/lib`) — importing `cv2` from the venv's
+  python directly, without activation, fails.
+- **COOL version disclosure**: the COOL build reports `cv2.__version__` =
+  **4.14.0-pre**. It is the vendor's optimized build, not OpenCV 5. The live API
+  and the evaluation below therefore run the pip **OpenCV 5.0.0** venv on the
+  same Graviton instance (so the OpenCV 5 workload genuinely runs on AWS), and
+  the COOL configuration appears as its own benchmark row with its version
+  recorded. Every benchmark CSV row carries the exact `cv2.__version__`,
+  instance type, and AMI id that produced it.
+- **x86 baseline instance**: `c7i.xlarge`, stock Ubuntu 24.04, pip OpenCV 5.0.0.
+- **S3**: bucket `zoomin-inspector-<account>` holds the code bundle, per-config
+  benchmark CSVs, the eval CSV, run logs, and health output under
+  `graviton/` and `x86/` prefixes.
+- **Security group** `zoomin-sg`: 22 (deploy), 8000 (FastAPI), 7860 (Gradio).
+  Instances are terminated after the runs; the group is for the deploy window.
+- **Judges' endpoint**: `http://<graviton-public-dns>:8000` — `GET /health`
+  returned `{"status": "ok", "opencv": "5.0.0"}` from the running instance.
+  The deployment is reproducible from `docs/AWS_DEPLOY.md` (note: that runbook
+  predates the Graviton4 subscription — the instance family is c8g, not c7g).
 
 ## 6. Evaluation
 
@@ -75,28 +98,97 @@ Bottle (first category evaluated locally, 2026-10-20): NormalityScorer fit on
   DEFECT 4.0, unsure 2.5) were tuned on this test set and must be validated
   per-category on the EC2 run; transistor/capsule pending the AWS deploy.
 
-TODO: transistor + capsule on EC2; AUROC/AUPRO vs labels; compare against
-published PatchCore numbers where applicable.
+**EC2 run, 2026-10-22** (Graviton instance, OpenCV 5.0.0 vanilla venv, full
+agent loop, budget 8, all three categories; per-image rows in
+`bench/eval_results.csv`, n=315). The bottle numbers reproduced the local run
+exactly (AUROC 0.961 / acc 0.843 / P 1.000 / R 0.794), which cross-validates
+the harness.
+
+| Category | n | AUROC | Accuracy | Recall | Precision | Escalation |
+|---|---|---|---|---|---|---|
+| bottle | 83 | 0.961 | 0.843 | 0.794 | 1.000 | 10.8% |
+| transistor | 100 | 0.836 | 0.790 | 0.550 | 0.880 | 31.0% |
+| capsule | 132 | 0.653 | 0.348 | 0.211 | 1.000 | 12.1% |
+| **overall** | **315** | **0.736** | — | — | — | **17.8%** |
+
+Capsule is a genuine failure of the classical scorer (see 6.4) — reported as
+measured, not hidden. Published PatchCore results on MVTec AD reach ~0.99
+image AUROC averaged over categories; our CPU-only classical baseline is not
+in that league, and closing that gap is what the hooked-in PatchCore/ONNX
+path (section 4) is for.
 
 ### 6.2 Agentic loop ablations
 
-TODO: task success within crop budget; escalation precision/recall;
-false-alarm rate with vs without the re-verify re-zoom (the ablation proving the
-loop matters, not just the scorer).
+From the same EC2 eval (n=315; the trace of every image is in the CSV's
+`n_regions` / `replans` / `escalated` columns):
+
+- **The escalation path rescues real defects.** Counting a defect as
+  "surfaced to a human" when it was predicted DEFECT *or* escalated:
+  bottle 58/63 (92.1%), transistor 33/40 (82.5%), capsule 37/109 (33.9%).
+  Escalation alone accounts for 8 (bottle), 11 (transistor), and 14 (capsule)
+  of those — cases a single-shot classifier at the same threshold would have
+  silently passed as OK.
+- **Re-planning is exercised constantly**: 231 re-zoom events across 315
+  images (transistor alone: 129 re-zooms over 100 images — bent/misplaced
+  leads routinely need a second, tighter look). Vision output changing the
+  next tool call is the norm in the trace, not a demo path.
+- **False alarms stay near zero where the scorer fits the object**: bottle
+  and capsule precision are both 1.000 (0 false positives); transistor has
+  the only 3 false positives in 315 images (good transistors scoring
+  4.3–5.1 sigma).
 
 ### 6.3 COOL benchmark (Best Use of COOL evidence)
 
-TODO: paste the table from `bench/results.csv` — ms/image, images/sec,
-$/10K images for (A) COOL on Graviton vs (B) vanilla pip on Graviton vs
-(C) vanilla pip on x86. Same script, same images, same N.
+Same script (`bench/benchmark.py`), same 83 bottle test images, same agent
+pipeline (scan → zoom → inspect), run 2026-10-22. On-demand list prices used
+for the cost column: c8g.xlarge $0.1718/hr, c7i.xlarge $0.175/hr; the COOL
+software fee was $0 under the 7-day Marketplace free trial.
+
+| Config | OpenCV | Instance | ms/image | images/sec | $/10K images | Defect regions |
+|---|---|---|---|---|---|---|
+| A. COOL on Graviton | 4.14.0-pre (COOL) | c8g.xlarge | 30.69 | 32.6 | $0.0146 | 27 |
+| B. Vanilla pip on Graviton | 5.0.0 | c8g.xlarge | **25.70** | **38.9** | **$0.0123** | 27 |
+| C. Vanilla pip on x86 | 5.0.0 | c7i.xlarge | 41.96 | 23.8 | $0.0204 | 27 |
+
+**The honest headline: on this workload, COOL did not win.** All three
+configs produce identical inspection output (27 defect regions — the pipeline
+agrees, only speed differs). COOL beats the x86 baseline by ~27% per image,
+but stock OpenCV 5.0.0 on the *same* Graviton4 hardware is a further ~16%
+faster than the COOL 4.14.0-pre build. Plausible causes, stated as hypotheses:
+COOL's published gains (up to 70%) were measured against OpenCV 4.x on
+Graviton2, and OpenCV 5's rewritten CPU code paths plus newer Arm kernels
+have narrowed the gap; our workload is small-image classical morphology and
+contour work, not the large-kernel / DNN operations where COOL's Kleidi
+kernels help most. We report the comparison exactly as measured — that
+reproducibility is the deliverable, and the CSVs (with per-row OpenCV
+version, instance type, and AMI id) are in `bench/results-*.csv`.
 
 ### 6.4 Failure cases (required)
 
-TODO — be honest, judges ask for these:
-- defects smaller than the heatmap resolution (missed at overview, never proposed);
-- texture false positives (e.g. brushed metal) that burn crop budget;
-- ambiguous cases correctly escalated (not failures — show the trace);
-- re-zoom hitting the crop edge on border defects.
+All from the EC2 eval (n=315), worst offenders named:
+
+- **Capsule print/surface defects are invisible to this scorer.**
+  `faulty_imprint` recall 0/22 and `scratch` 0/23: a per-pixel Gaussian
+  normality model over aligned images cannot see print variation or hairline
+  scratches whose pixel statistics match normal texture. `squeeze` (14/20)
+  and `crack` (6/23) fare better because they deform the silhouette or local
+  contrast. Capsule overall: AUROC 0.653, recall 0.211 — the learned scorer
+  path exists precisely for this category.
+- **Low-contrast bottle contamination** (the local run's known weakness)
+  repeats on EC2: missed defects peak at 1.6–3.0 sigma, overlapping normal
+  reflection variation; 5 of 63 bottle defects were neither predicted nor
+  escalated.
+- **Transistor ambiguity burns budget and escalates**: 31% escalation and
+  129 re-zooms over 100 images. Bent-lead cases cluster at the unsure
+  threshold (top missed defect: `bent_lead` at 3.95 sigma, just under the
+  4.0 DEFECT line) — the agent correctly refuses to guess, but a human
+  reviews nearly a third of transistors.
+- **The only false positives** (3/315) are good transistors at 4.3–5.1
+  sigma — lead reflections that look like bends at overview resolution and
+  survive re-zoom.
+- Defects smaller than the heatmap resolution and defects at crop borders
+  remain structural misses of the budgeted-zoom design: if the overview
+  never proposes the region, no amount of re-planning recovers it.
 
 ## 7. Limitations
 
@@ -106,8 +198,8 @@ TODO — be honest, judges ask for these:
 - The planner is rule-based and auditable, but dumber than an LLM planner —
   re-plan decisions are heuristics, not reasoning over the trace.
 - Thresholds (propose 2.0 sigma, DEFECT 4.0, unsure 2.5) were tuned on the
-  bottle test set; per-category validation on transistor/capsule is pending
-  the AWS run.
+  bottle test set; the 2026-10-22 EC2 validation shows they transfer to
+  transistor (AUROC 0.836) but not capsule (0.653) — see 6.1/6.4.
 - Single-image inspection only; the video-frame mode from the original idea
   was deferred to keep the scope honest for the deadline.
 

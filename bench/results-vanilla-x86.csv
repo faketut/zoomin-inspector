@@ -1,0 +1,2 @@
+config,opencv,instance_type,ami_id,n_images,ms_per_image,images_per_sec,defect_regions,dollars_per_10k_images
+vanilla-x86,5.0.0,c7i.xlarge,ami-02a9cdd4e98bc3c78,83,41.96,23.83,27,0.0204

@@ -1,0 +1,2 @@
+config,opencv,instance_type,ami_id,n_images,ms_per_image,images_per_sec,defect_regions,dollars_per_10k_images
+cool-graviton,4.14.0-pre,c8g.xlarge,ami-01db31139bc5615d8,83,30.69,32.59,27,0.0146

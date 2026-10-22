@@ -114,7 +114,8 @@ $/10K images. Keep the CSVs in `bench/` and paste the table into `docs/REPORT.md
 - [x] Pinned dependencies (`requirements.txt`)
 - [x] Architecture diagram (`docs/architecture.md`)
 - [x] Evaluation incl. failure cases (`docs/REPORT.md` — fill in after runs)
-- [ ] 5-min demo video, final report numbers
+- [x] Final report numbers (EC2 runs 2026-10-22: benchmarks + 3-category eval in `docs/REPORT.md`, CSVs in `bench/`)
+- [ ] 5-min demo video (v1 draft exists; refresh with EC2 numbers)
 
 ## Troubleshooting
 

@@ -1,0 +1,2 @@
+config,opencv,instance_type,ami_id,n_images,ms_per_image,images_per_sec,defect_regions,dollars_per_10k_images
+vanilla-graviton,5.0.0,c8g.xlarge,ami-01db31139bc5615d8,83,25.7,38.92,27,0.0123
