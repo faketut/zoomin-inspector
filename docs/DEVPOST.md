@@ -8,7 +8,7 @@
 **Tagline:** An agentic visual defect inspector that spends a fixed zoom budget the way a human inspector spends attention — scan the overview, zoom the suspicious regions, escalate when unsure.
 
 **Links**
-- Code: `faketut/zoomin-inspector` (repo push pending; local at `~/workspace/zoomin-inspector`)
+- Code: https://github.com/faketut/zoomin-inspector (private; pushed 2026-10-22, master @ 485dbc9)
 - Live endpoint: judges' API was verified live on the Graviton4 instance during the deploy (GET /health → ok); all instances terminated after the run
 - Video: `video/out/zoomin-demo.mp4` (v2, re-rendered with EC2 numbers — upload to YouTube/Vimeo and paste the link; Devpost needs a streaming URL)
 - Technical report: `docs/REPORT.md` in the repo (includes architecture diagram)
@@ -71,4 +71,4 @@ Capsule is a real failure: **AUROC 0.653**, with `faulty_imprint` 0/22 and `scra
 ## 🔭 What's next
 
 - Wire the OpenCV 5 DNN hook (ONNXScorer is already stubbed in the repo) so fine textures like capsule print get a learned scorer.
-- Push the repo, upload the demo video, and submit before the Oct 26 deadline.
+- Submit before the Oct 26 deadline (repo pushed 2026-10-22; demo video upload is the remaining link).
