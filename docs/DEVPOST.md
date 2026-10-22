@@ -11,6 +11,7 @@
 - Code: https://github.com/faketut/zoomin-inspector (private; pushed 2026-10-22, master @ 485dbc9)
 - Live endpoint: judges' API was verified live on the Graviton4 instance during the deploy (GET /health → ok); all instances terminated after the run
 - Video: `video/out/zoomin-demo.mp4` (v2, re-rendered with EC2 numbers — upload to YouTube/Vimeo and paste the link; Devpost needs a streaming URL)
+- Live UI recording (optional second link / judging evidence): `video/out/zoomin-live-demo.mp4` (1:41) — a real screen recording of the Gradio app inspecting three MVTec bottles live (defects found / escalated / clean pass), running the fitted bottle NormalityScorer (`ZOOMIN_MODEL=models/bottle_normality.npz`)
 - Technical report: `docs/REPORT.md` in the repo (includes architecture diagram)
 
 **Built with:** opencv-5 · python · fastapi · gradio · aws-ec2-graviton4 · cloud-optimized-opencv · docker · mvtec-ad
