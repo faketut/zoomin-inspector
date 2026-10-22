@@ -105,6 +105,8 @@ def s1():
         d.text((100, y), "›", font=F(36, bold=True), fill=ACCENT)
         d.text((160, y), t, font=F(36), fill=FG)
         y += 64
+    d.text((100, y + 40), "Solo entry — Jack (faketut)",
+           font=F(32), fill=MUTED)
     footer(d, 1)
     img.save(OUT / "s1.png")
 
