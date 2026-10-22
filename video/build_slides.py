@@ -1,8 +1,9 @@
 """Render the ZoomIn Inspector demo-video slides (1920x1080 PNGs) with PIL.
 
 Usage: python3 build_slides.py  -> video/slides/s1..s6.png
-Numbers reflect the MVTec bottle run (2026-10-20) and AWS deploy plan.
-Re-run after editing; EC2 benchmark figures go into s5.
+Numbers reflect the MVTec bottle run (2026-10-20) and the EC2 benchmark
+results (2026-10-22): COOL 30.69 / vanilla-Graviton 25.70 / vanilla-x86 41.96
+ms/image; bottle 0.961, transistor 0.836, capsule 0.653.
 """
 
 from pathlib import Path
@@ -173,8 +174,8 @@ def s4():
          "normal reflection variation.", None),
         ("Synthetic controls: AUROC 1.0, 15.6 ms/image. "
          "Scorer: NumPy/OpenCV only, no learned weights, ~0.5 MB/category.", None),
-        ("Caveat: thresholds tuned on this set; transistor/capsule run on EC2 "
-         "validates per-category.", None),
+        ("Caveat: thresholds tuned on this set; transistor/capsule were run "
+         "on EC2 (0.836 / 0.653) — see the cloud slide.", None),
     ], y, size=30)
     footer(d, 4)
     img.save(OUT / "s4.png")
@@ -182,25 +183,32 @@ def s4():
 
 def s5():
     img, d = canvas()
-    title(d, "Cloud: AWS Graviton + COOL")
+    title(d, "AWS Graviton4 + COOL: honest numbers")
     y = bullets(d, [
-        ("One container: FastAPI API + Gradio UI, `docker compose up` on the "
-         "official Cloud Optimized OpenCV AMI.", None),
-        ("Graviton 2 family (c6g.xlarge) — matches the AMI's tested config; "
-         "that alignment is the Best Use of COOL evidence.", None),
-        ("GET /health returns the exact cv2.__version__ on the instance.", None),
-    ], y=250, size=33)
-    d.text((100, y + 10), "Benchmark: same script, same images, three ways",
+        ("One container: FastAPI API + Gradio UI on c8g.xlarge from the "
+         "official Cloud Optimized OpenCV AMI for Graviton4 — our Best Use "
+         "of COOL evidence. COOL's optimized build is OpenCV 4.14.0-pre; "
+         "the live API runs pip OpenCV 5.0.0.", None),
+        ("Same script, same 83 bottle images, three configs — identical "
+         "27 defect regions everywhere. All instances terminated; run cost "
+         "under $1.", None),
+    ], y=228, size=31)
+    d.text((100, y + 8), "Benchmark: ms/image · images/sec · $/10K images",
            font=F(33, bold=True), fill=FG)
-    y += 62
+    y += 60
     x = 100
-    for name, sub in [("A", "COOL on Graviton"), ("B", "vanilla pip on Graviton"),
-                      ("C", "vanilla pip on x86")]:
-        card(d, x, y, 520, 220, name, sub)
+    for name, sub, hcolor in [
+        ("30.69", "A. COOL 4.14.0-pre on Graviton4\n32.6 img/s · $0.0146/10K", FG),
+        ("25.70", "B. vanilla 5.0.0 on Graviton4\n38.9 img/s · $0.0123/10K", GREEN),
+        ("41.96", "C. vanilla 5.0.0 on x86\n23.8 img/s · $0.0204/10K", FG),
+    ]:
+        card(d, x, y, 520, 260, name, sub, hcolor)
         x += 560
-    bullets(d, [("Metrics: ms/image, images/sec, $/10K images. Full "
-                 "transistor/capsule results land on this slide from the EC2 "
-                 "run — re-render segment 5.", None)], y + 260, size=30)
+    bullets(d, [("Honest headline: stock OpenCV 5.0.0 beat COOL by ~16% on "
+                 "the same Graviton4 hardware — reported in the paper. MVTec "
+                 "on the instance: bottle 0.961, transistor 0.836, capsule "
+                 "0.653 — capsule's imprint/scratch misses are documented, "
+                 "not hidden.", None)], y + 300, size=28)
     footer(d, 5)
     img.save(OUT / "s5.png")
 
