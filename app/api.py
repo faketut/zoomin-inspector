@@ -5,6 +5,7 @@ Run:  uvicorn app.api:app --port 8000
 
 import base64
 import io
+import os
 import time
 
 import cv2
@@ -14,10 +15,20 @@ from fastapi.responses import JSONResponse
 
 from zoomin.agent import run_inspection
 from zoomin.config import InspectorConfig
-from zoomin.scoring import CoarseScorer
+from zoomin.scoring import CoarseScorer, NormalityScorer
+
+
+def _default_scorer():
+    """ZOOMIN_MODEL=<.npz> loads a fitted NormalityScorer (the configuration
+    behind the reported MVTec numbers); otherwise CoarseScorer."""
+    model = os.environ.get("ZOOMIN_MODEL")
+    if model and os.path.exists(model):
+        return NormalityScorer.load(model)
+    return CoarseScorer()
+
 
 app = FastAPI(title="ZoomIn Inspector", version="0.1.0")
-_scorer = CoarseScorer()  # process-wide; swap for ONNXScorer with weights
+_scorer = _default_scorer()  # process-wide; swap for ONNXScorer with weights
 
 
 @app.get("/health")

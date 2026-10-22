@@ -9,3 +9,5 @@ bench/*.csv
 .DS_Store
 video/segments/
 video/*.mp3
+
+video/live/raw/

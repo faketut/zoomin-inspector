@@ -5,6 +5,7 @@ Run:  python -m app.ui   (serves on :7860)
 """
 
 import argparse
+import os
 
 import cv2
 import gradio as gr
@@ -12,9 +13,20 @@ import numpy as np
 
 from zoomin.agent import run_inspection
 from zoomin.config import InspectorConfig
-from zoomin.scoring import CoarseScorer
+from zoomin.scoring import CoarseScorer, NormalityScorer
 
-_scorer = CoarseScorer()
+
+def _default_scorer():
+    """ZOOMIN_MODEL=<.npz> loads a fitted NormalityScorer (the configuration
+    behind the reported MVTec numbers); otherwise the single-image
+    CoarseScorer fallback is used."""
+    model = os.environ.get("ZOOMIN_MODEL")
+    if model and os.path.exists(model):
+        return NormalityScorer.load(model)
+    return CoarseScorer()
+
+
+_scorer = _default_scorer()
 
 
 def inspect_image(img: np.ndarray, budget: int):
