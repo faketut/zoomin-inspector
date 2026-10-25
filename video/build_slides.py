@@ -210,7 +210,8 @@ def s5():
                  "the same Graviton4 hardware — reported in the paper. MVTec "
                  "on the instance: bottle 0.961, transistor 0.840, capsule "
                  "0.652 — capsule's imprint/scratch misses (2/22, 1/23) and "
-                 "transistor's 16 false positives are documented, not hidden.", None)], y + 300, size=28)
+                 "transistor's 16 false positives are documented, not hidden.", None)],
+            y + 300, size=28)
     footer(d, 5)
     img.save(OUT / "s5.png")
 
