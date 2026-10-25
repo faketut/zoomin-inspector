@@ -5,26 +5,30 @@ no defective training data needed — and scores a crop by distance to the bank.
 On MVTec AD this is a strong, well-published baseline, and the memory-bank
 build runs on CPU in minutes.
 
-This module is a guarded adapter: if ``anomalib`` is not installed,
-``available()`` returns False and the classical path in ``tools.inspect_crop``
-is used alone. Install with::
+WHY THIS IS NOT WIRED INTO THE AGENT
+------------------------------------
+``score_crop`` is deliberately unimplemented. A version that silently returned
+a classical score, or a 0.5/0.5 blend of an unimplemented model, would make the
+agent's reported score and its trace disagree about where the number came from
+— the failure mode this repo treats as a correctness bug. Installing
+``anomalib`` and pinning it is a prerequisite for the implementation; until
+that is done, callers get an explicit ``unavailable`` adapter that the agent
+does not use.
 
-    pip install anomalib   # then wire a trained PatchCore model here
-
-Integration sketch (anomalib >= 1.x API — pin and verify against the installed
-version before the competition run):
-
-    from anomalib.models import Patchcore
-    from anomalib.data import MVTecAD  # or a folder-based datamodule
-    model = Patchcore(...)
-    engine = Engine(...)  # fit on normal images, then export / predict
+To wire it up:
+  1. ``pip install anomalib`` and pin the version in requirements.txt.
+  2. Fit a PatchCore model on the category's normal images (anomalib Engine).
+  3. Implement ``score_crop`` against that pinned API and return the anomaly
+     map's peak, normalized to the model's own calibration — then publish a
+     ``calibration`` dict on the adapter like the scorers in ``scoring.py`` do,
+     so ``InspectorConfig.for_scorer`` can bind thresholds to it.
 """
 
 import numpy as np
 
 
 class PatchCoreAdapter:
-    """Thin wrapper; ``score_crop`` returns a 0..1 anomaly score for a crop."""
+    """Thin wrapper; ``score_crop`` returns an anomaly score for a crop."""
 
     def __init__(self, model=None):
         self.model = model
@@ -35,19 +39,7 @@ class PatchCoreAdapter:
     def score_crop(self, crop: np.ndarray) -> float:
         if self.model is None:
             raise RuntimeError("PatchCore model not loaded — see module docstring.")
-        # TODO: wire to anomalib Engine.predict on the crop and normalize
-        # the anomaly map to [0, 1]. Kept explicit so the integration is
-        # verified against the pinned anomalib version, not guessed.
-        raise NotImplementedError("Wire to your trained anomalib PatchCore model.")
-
-
-def try_load(model_path: str | None = None) -> PatchCoreAdapter:
-    """Return an adapter; unavailable (classical-only) when anomalib is missing."""
-    if model_path is None:
-        return PatchCoreAdapter(None)
-    try:
-        import anomalib  # noqa: F401
-    except ImportError:
-        return PatchCoreAdapter(None)
-    # TODO: load checkpoint -> PatchCoreAdapter(model)
-    return PatchCoreAdapter(None)
+        raise NotImplementedError(
+            "Wire to your trained anomalib PatchCore model, then publish a "
+            "'calibration' dict on this adapter (see module docstring)."
+        )

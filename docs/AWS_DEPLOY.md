@@ -45,7 +45,7 @@ Lock 8000/7860 back down after judging — the competition scores responsible op
 ## 4. Launch the Graviton instance (config A + B)
 
 - **AMI:** the subscribed COOL AMI (Ubuntu 24.04, `/opt/cool`).
-- **Type:** `c7g.xlarge` (~$0.145/hr on-demand us-east-1 — confirm at launch).
+- **Type:** `c8g.xlarge` (Graviton4, ~$0.1718/hr on-demand us-east-1 — confirm at launch).
 - **Storage:** 30 GB gp3. **Key pair:** `zoomin-key`. **Security group:** `zoomin-sg`.
 - **User data:** paste `scripts/ec2-user-data.sh` (installs docker, compose plugin, awscli, git).
 
@@ -83,7 +83,7 @@ $COOLPY -m pip install --quiet $(grep -v '^opencv-python-headless' requirements.
 $COOLPY -c "import cv2; assert cv2.__version__.startswith('5'), cv2.__version__; print('COOL cv2:', cv2.__version__)"
 
 $COOLPY bench/benchmark.py --images "data/mvtec/bottle/test" \
-    --config cool-graviton --dollars-per-hour 0.145 --out bench/results.csv
+    --config cool-graviton --dollars-per-hour 0.1718 --out bench/results.csv
 ```
 
 Then serve the demo endpoint from the COOL runtime:
@@ -99,12 +99,12 @@ curl -s localhost:8000/health
 python3 -m venv /opt/venvs/vanilla
 /opt/venvs/vanilla/bin/pip install --quiet -r requirements.txt
 /opt/venvs/vanilla/bin/python bench/benchmark.py --images "data/mvtec/bottle/test" \
-    --config vanilla-graviton --dollars-per-hour 0.145 --out bench/results.csv
+    --config vanilla-graviton --dollars-per-hour 0.1718 --out bench/results.csv
 ```
 
 ## 9. Config C — vanilla pip OpenCV on x86
 
-Launch a **c7i.xlarge** (~$0.17/hr) with stock Ubuntu 24.04, same security group:
+Launch a **c7i.xlarge** (~$0.175/hr) with stock Ubuntu 24.04, same security group:
 
 ```bash
 sudo apt-get update -qq && sudo apt-get install -y -qq python3-venv git
@@ -112,7 +112,7 @@ git clone https://github.com/faketut/zoomin-inspector.git && cd zoomin-inspector
 python3 -m venv .venv && .venv/bin/pip install --quiet -r requirements.txt
 python3 scripts/download_mvtec.py --categories bottle --out data/mvtec
 .venv/bin/python bench/benchmark.py --images "data/mvtec/bottle/test" \
-    --config vanilla-x86 --dollars-per-hour 0.17 --out bench/results.csv
+    --config vanilla-x86 --dollars-per-hour 0.175 --out bench/results.csv
 ```
 
 **Terminate this instance when the CSV is saved** (it's the most expensive per hour).

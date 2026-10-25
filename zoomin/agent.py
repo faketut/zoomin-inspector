@@ -1,34 +1,40 @@
 """The inspector agent: an evidence-driven perception → decision → action loop.
 
-Protocol (ReAct-style, rule-based planner — deterministic and auditable):
+Protocol (rule-based planner — deterministic and auditable):
   1. scan_overview  → heatmap + proposed boxes (vision)
   2. for each box within the crop budget:
        zoom_crop    → crop the suspicious region (action driven by vision output)
-       inspect_crop → defect score (vision)
+       inspect_crop → defect score + coverage (vision)
        decide:  score >= defect_threshold  -> DEFECT
                 score >= unsure_threshold   -> RE-PLAN: tighter re-zoom, re-inspect;
-                                             still unsure -> ESCALATE to human
+                                             coverage >= coverage_confirm -> DEFECT
+                                             else                         -> ESCALATE
                 else                        -> OK
   3. finalize_report → verdicts + full tool trace + annotated image
 
 Every step is appended to ``trace`` with inputs/outputs/rationale. The trace is
 the Agentic Vision deliverable: it shows vision results changing later tool
-calls (heatmap → crop coordinates; inspection score → re-zoom vs escalate).
+calls (heatmap → crop coordinates; inspection result → re-zoom vs escalate).
+
+The re-plan reads ``coverage`` rather than peak heat on purpose: the re-zoom
+window is nested inside the first crop, so its peak heat is bounded above by the
+first pass's peak and can never confirm anything. Coverage is a fraction of the
+window, so the same defect fills more of a tighter window and does move.
 """
 
 import argparse
 import json
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
 from . import report as report_mod
 from .config import InspectorConfig
-from .scoring import CoarseScorer, NormalityScorer
-from .tools import inspect_crop, scan_overview, strongest_sub_box, zoom_crop, Box
+from .scoring import NormalityScorer, load_default_scorer
+from .tools import Box, inspect_crop, scan_overview, strongest_sub_box, zoom_crop
 
 
 @dataclass
@@ -49,7 +55,7 @@ class RegionVerdict:
     region_id: int
     box: Box            # padded box in full-image coordinates
     verdict: str        # OK | DEFECT | ESCALATED
-    score: float
+    score: float        # the score the verdict was decided on
     replanned: bool = False
 
 
@@ -88,8 +94,9 @@ class InspectionReport:
 
 
 def run_inspection(image: np.ndarray, config: InspectorConfig = None,
-                   scorer=None, patchcore=None) -> InspectionReport:
-    config = config or InspectorConfig()
+                   scorer=None) -> InspectionReport:
+    scorer = scorer or load_default_scorer()
+    config = config or InspectorConfig.for_scorer(scorer)
     t0 = time.perf_counter()
     trace: list[TraceStep] = []
     step = 0
@@ -98,6 +105,9 @@ def run_inspection(image: np.ndarray, config: InspectorConfig = None,
         nonlocal step
         trace.append(TraceStep(step, tool, inputs, outputs, rationale))
         step += 1
+
+    def inspect(crop, heat_slice):
+        return inspect_crop(crop, config=config, heat=heat_slice)
 
     # 1 — perceive: coarse scan of the whole image
     heat, boxes = scan_overview(image, scorer=scorer, config=config)
@@ -120,29 +130,29 @@ def run_inspection(image: np.ndarray, config: InspectorConfig = None,
             f"Region {i} heat={box.heat:.2f} — zooming in for close inspection.")
 
         # Aligned heat slice: the full-image heatmap restricted to this crop's
-        # footprint (same pixel extents as `crop`). Never re-run a
-        # position-sensitive scorer on the crop itself.
+        # footprint (same pixel extents as `crop`).
         heat_crop = heat[padded.y : padded.y + padded.h,
                          padded.x : padded.x + padded.w]
-        result = inspect_crop(crop, config=config, patchcore=patchcore,
-                              scorer=scorer, heat=heat_crop)
+        result = inspect(crop, heat_crop)
         log("inspect_crop",
             {"region_id": i},
-            {"score": round(result.score, 4), "n_contours": result.n_contours,
-             "detail": {k: round(v, 4) if isinstance(v, float) else v
-                        for k, v in result.detail.items()}},
-            f"Region {i} scored {result.score:.2f}.")
+            {"score": round(result.score, 4), "coverage": round(result.coverage, 4),
+             "n_contours": result.n_contours},
+            f"Region {i} scored {result.score:.2f} "
+            f"(coverage {result.coverage:.2f}).")
 
         replanned = False
+        verdict_score = result.score
         if result.score >= config.defect_threshold:
             verdict = "DEFECT"
             rationale = f"Score {result.score:.2f} >= {config.defect_threshold}."
         elif result.score >= config.unsure_threshold:
             # Re-plan: don't guess — look closer at the strongest sub-region.
             replanned = True
-            sub = strongest_sub_box(result, crop.shape)
+            sub = strongest_sub_box(result)
             if sub is not None:
-                sw, sh = int(crop.shape[1] * config.rezoom_shrink), int(crop.shape[0] * config.rezoom_shrink)
+                sw = int(crop.shape[1] * config.rezoom_shrink)
+                sh = int(crop.shape[0] * config.rezoom_shrink)
                 cx, cy = sub.x + sub.w // 2, sub.y + sub.h // 2
                 tight = Box(max(0, cx - sw // 2), max(0, cy - sh // 2), sw, sh, sub.heat)
                 crop2, padded2 = zoom_crop(crop, tight, padding=0.1)
@@ -154,19 +164,26 @@ def run_inspection(image: np.ndarray, config: InspectorConfig = None,
                     f"instead of guessing.")
                 heat2 = heat_crop[padded2.y : padded2.y + padded2.h,
                                   padded2.x : padded2.x + padded2.w]
-                result2 = inspect_crop(crop2, config=config, patchcore=patchcore,
-                                       scorer=scorer, heat=heat2)
+                result2 = inspect(crop2, heat2)
+                confirmed = result2.coverage >= config.coverage_confirm
                 log("inspect_crop",
                     {"region_id": i, "replan": True},
-                    {"score": round(result2.score, 4), "n_contours": result2.n_contours},
-                    f"Re-inspection scored {result2.score:.2f}.")
-                if result2.score >= config.defect_threshold:
-                    verdict, result = "DEFECT", result2
-                    rationale = "Tighter re-zoom confirmed the defect."
+                    {"score": round(result2.score, 4),
+                     "coverage": round(result2.coverage, 4),
+                     "n_contours": result2.n_contours,
+                     "coverage_confirm": config.coverage_confirm},
+                    f"Re-inspection: coverage {result2.coverage:.2f} vs "
+                    f"{config.coverage_confirm} to confirm.")
+                verdict_score = result2.score
+                if confirmed:
+                    verdict = "DEFECT"
+                    rationale = (f"Tighter re-zoom confirmed the defect: coverage "
+                                 f"{result2.coverage:.2f} >= {config.coverage_confirm}.")
                 else:
                     verdict = "ESCALATED"
-                    rationale = (f"Still ambiguous after re-zoom "
-                                 f"({result2.score:.2f}) — escalating to a human.")
+                    rationale = (f"Still ambiguous after re-zoom (coverage "
+                                 f"{result2.coverage:.2f} < {config.coverage_confirm}) "
+                                 f"— escalating to a human.")
             else:
                 verdict = "ESCALATED"
                 rationale = "Ambiguous but no localizable sub-region — escalating."
@@ -174,10 +191,11 @@ def run_inspection(image: np.ndarray, config: InspectorConfig = None,
             verdict = "OK"
             rationale = f"Score {result.score:.2f} < {config.unsure_threshold}."
 
-        regions.append(RegionVerdict(i, padded, verdict, result.score, replanned))
+        regions.append(RegionVerdict(i, padded, verdict, verdict_score, replanned))
         log("decide",
             {"region_id": i},
-            {"verdict": verdict, "replanned": replanned},
+            {"verdict": verdict, "replanned": replanned,
+             "score": round(verdict_score, 4)},
             rationale)
 
     # 3 — finalize
@@ -189,6 +207,13 @@ def run_inspection(image: np.ndarray, config: InspectorConfig = None,
     return rep
 
 
+def build_config(args) -> InspectorConfig:
+    """Config for the CLI: thresholds bound to the scorer actually in use."""
+    scorer = (NormalityScorer.load(args.model) if args.model
+              else load_default_scorer())
+    return InspectorConfig.for_scorer(scorer, crop_budget=args.budget), scorer
+
+
 def main():
     ap = argparse.ArgumentParser(description="ZoomIn Inspector — run the agent on one image.")
     ap.add_argument("image", help="input image path")
@@ -196,19 +221,13 @@ def main():
     ap.add_argument("--budget", type=int, default=8, help="crop budget")
     ap.add_argument("--model", default=None,
                     help="NormalityScorer .npz model (fit on normal images). "
-                         "Without it, falls back to CoarseScorer with its own thresholds.")
+                         "Falls back to $ZOOMIN_MODEL, then CoarseScorer.")
     args = ap.parse_args()
 
     image = cv2.imread(args.image)
     if image is None:
         raise SystemExit(f"cannot read image: {args.image}")
-    if args.model:
-        config = InspectorConfig(crop_budget=args.budget)  # z-unit defaults
-        scorer = NormalityScorer.load(args.model)
-    else:
-        config = InspectorConfig(crop_budget=args.budget, heat_threshold=0.15,
-                                 defect_threshold=0.55, unsure_threshold=0.20)
-        scorer = CoarseScorer()
+    config, scorer = build_config(args)
     rep = run_inspection(image, config=config, scorer=scorer)
 
     os.makedirs(args.out, exist_ok=True)

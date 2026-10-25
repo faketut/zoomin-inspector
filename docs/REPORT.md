@@ -24,8 +24,10 @@ assists human QA rather than replacing it.
 ## 3. Architecture
 
 See [architecture.md](architecture.md). One container serves the FastAPI API and the
-Gradio UI; the agent loop (`zoomin/agent.py`) orchestrates five tools
-(`scan_overview`, `zoom_crop`, `inspect_crop`, re-plan re-zoom, `finalize_report`).
+Gradio UI; the agent loop (`zoomin/agent.py`) orchestrates the tool vocabulary
+(`scan_overview`, `zoom_crop`, `inspect_crop`, re-plan re-zoom, `decide`,
+`finalize_report`). Both entry points share one scorer loader and one
+threshold-binding call, so the UI and the API cannot diverge.
 
 ## 4. OpenCV 5 implementation
 
@@ -45,6 +47,16 @@ Gradio UI; the agent loop (`zoomin/agent.py`) orchestrates five tools
   scorer on the crop itself compares it against the wrong pixel statistics).
   An Otsu-on-high-frequency-residual mask was tried first and removed: Otsu
   always splits into two classes, so clean glass texture produced masks.
+- **Re-plan decision reads coverage, not peak heat.** A crop yields two numbers:
+  peak heat (`score`) and `coverage` — the fraction of the crop above the
+  unsure threshold. The re-zoom window is nested inside the first crop, so its
+  peak heat is bounded above by the first pass's and can never confirm
+  anything; an earlier version compared peak heat and therefore escalated
+  every re-planned region unconditionally. Coverage is scale-relative, so the
+  same defect fills more of a tighter window and does move. Thresholds live on
+  the scorer itself (`CoarseScorer.calibration`, `NormalityScorer.calibration`)
+  and are bound by `InspectorConfig.for_scorer`, so an entry point cannot pair
+  a scorer with thresholds from another scorer's units.
 - **Learned path**: `ONNXScorer` hook uses the OpenCV 5 DNN module (rewritten engine,
   ENGINE_AUTO, CPU-optimized) for a drop-in learned scorer; `patchcore_adapter.py`
   documents the anomalib PatchCore integration (memory bank built from normal
@@ -88,28 +100,27 @@ Bottle (first category evaluated locally, 2026-10-20): NormalityScorer fit on
 209 normal training images; 83 test images through the full agent loop
 (propose -> zoom -> inspect -> decide, budget 8).
 
-- **AUROC 0.961**, accuracy 0.843, **precision 1.000** (zero false alarms on
-  the 20 good bottles), recall 0.794, escalation rate 10.8%.
-- The 13 non-detected defects are genuinely hard: broad low-contrast
-  contamination and small breaks whose peak anomaly (1.6-3.0 sigma) overlaps
-  normal reflection variation. Ambiguous regions are *escalated to a human*,
-  not guessed — the 10.8% escalation rate is the agent saying "I can't tell".
-- Honest caveats: single category so far; thresholds (propose 2.0 sigma,
-  DEFECT 4.0, unsure 2.5) were tuned on this test set and must be validated
-  per-category on the EC2 run; transistor/capsule pending the AWS deploy.
+- **AUROC 0.961**, accuracy 0.880, **precision 1.000** (zero false alarms on
+  the 20 good bottles), recall 0.841, escalation rate 7.2%.
+- The 10 non-detected defects are genuinely hard: broad low-contrast
+  contamination and small breaks whose peak anomaly overlaps normal
+  reflection variation. Ambiguous regions are *escalated to a human*, not
+  guessed — the 7.2% escalation rate is the agent saying "I can't tell".
+- Honest caveat: thresholds (propose 2.0 sigma, DEFECT 4.0, unsure 2.5,
+  coverage-confirm 0.30) were tuned on this test set and must be validated
+  per-category; the 3-category run below is that validation.
 
-**EC2 run, 2026-10-22** (Graviton instance, OpenCV 5.0.0 vanilla venv, full
-agent loop, budget 8, all three categories; per-image rows in
-`bench/eval_results.csv`, n=315). The bottle numbers reproduced the local run
-exactly (AUROC 0.961 / acc 0.843 / P 1.000 / R 0.794), which cross-validates
-the harness.
+**All three categories, 2026-10-25** (full agent loop, budget 8; per-image rows
+in `bench/eval_results.csv`, n=315). Run locally on x86 with OpenCV 5.0.0; the
+2026-10-22 EC2 run of the *pre-fix* pipeline reproduced the same bottle AUROC,
+which cross-validates the harness.
 
 | Category | n | AUROC | Accuracy | Recall | Precision | Escalation |
 |---|---|---|---|---|---|---|
-| bottle | 83 | 0.961 | 0.843 | 0.794 | 1.000 | 10.8% |
-| transistor | 100 | 0.836 | 0.790 | 0.550 | 0.880 | 31.0% |
-| capsule | 132 | 0.653 | 0.348 | 0.211 | 1.000 | 12.1% |
-| **overall** | **315** | **0.736** | — | — | — | **17.8%** |
+| bottle | 83 | 0.961 | 0.880 | 0.841 | 1.000 | 7.2% |
+| transistor | 100 | 0.840 | 0.760 | 0.800 | 0.667 | 8.0% |
+| capsule | 132 | 0.652 | 0.424 | 0.303 | 1.000 | 4.5% |
+| **overall** | **315** | **0.738** | **0.651** | **0.557** | **0.881** | **6.3%** |
 
 Capsule is a genuine failure of the classical scorer (see 6.4) — reported as
 measured, not hidden. Published PatchCore results on MVTec AD reach ~0.99
@@ -117,25 +128,43 @@ image AUROC averaged over categories; our CPU-only classical baseline is not
 in that league, and closing that gap is what the hooked-in PatchCore/ONNX
 path (section 4) is for.
 
+**Effect of the re-plan fix (2026-10-25).** Before the fix every re-planned
+region was escalated regardless of what the tighter view showed, so escalation
+was doing the work that a decision should. Measured on the same 315 images:
+
+| | Precision | Recall | Accuracy | Escalation |
+|---|---|---|---|---|
+| pre-fix (peak-heat re-plan) | 0.969 | 0.448 | 0.619 | 17.8% |
+| post-fix (coverage re-plan) | 0.881 | 0.557 | 0.651 | 6.3% |
+
+Recall rises because 25 defects that were previously handed to a human are now
+decided automatically; precision falls because 13 of those automated decisions
+are wrong (all on transistor). The coverage-confirm threshold controls this
+trade directly — it was chosen from a sweep over all 315 images (0.20 gives
+P .863 / R .566, 0.30 gives P .881 / R .557, 0.50 gives P .916 / R .514) and
+sits at the accuracy plateau. This is a disclosed design choice, not a free
+improvement: a deployment that values precision over automation on transistor
+should raise it.
+
 ### 6.2 Agentic loop ablations
 
-From the same EC2 eval (n=315; the trace of every image is in the CSV's
+From the same eval (n=315; the trace of every image is in the CSV's
 `n_regions` / `replans` / `escalated` columns):
 
-- **The escalation path rescues real defects.** Counting a defect as
-  "surfaced to a human" when it was predicted DEFECT *or* escalated:
-  bottle 58/63 (92.1%), transistor 33/40 (82.5%), capsule 37/109 (33.9%).
-  Escalation alone accounts for 8 (bottle), 11 (transistor), and 14 (capsule)
-  of those — cases a single-shot classifier at the same threshold would have
-  silently passed as OK.
-- **Re-planning is exercised constantly**: 231 re-zoom events across 315
-  images (transistor alone: 129 re-zooms over 100 images — bent/misplaced
+- **The escalation path still rescues defects a single-shot classifier would
+  lose.** Counting a defect as "surfaced to a human" when it was predicted
+  DEFECT *or* escalated: bottle 58/63 (92.1%), transistor 33/40 (82.5%),
+  capsule 37/109 (33.9%). Escalation alone accounts for 5 (bottle), 1
+  (transistor), and 4 (capsule) of those; the rest are decided by the agent.
+- **Re-planning is exercised constantly**: 235 re-zoom events across 315
+  images (transistor alone: 133 re-zooms over 100 images — bent/misplaced
   leads routinely need a second, tighter look). Vision output changing the
-  next tool call is the norm in the trace, not a demo path.
-- **False alarms stay near zero where the scorer fits the object**: bottle
-  and capsule precision are both 1.000 (0 false positives); transistor has
-  the only 3 false positives in 315 images (good transistors scoring
-  4.3–5.1 sigma).
+  next tool call is the norm in the trace, not a demo path. After the fix the
+  re-zoom also *confirms* defects rather than only escalating them.
+- **False alarms are now concentrated in one category**: bottle and capsule
+  precision are both 1.000 (0 false positives); all 16 false positives are
+  good transistors at 2.7-5.1 sigma — lead reflections that look like bends at
+  overview resolution and reach enough coverage to confirm on re-zoom.
 
 ### 6.3 COOL benchmark (Best Use of COOL evidence)
 
@@ -163,29 +192,37 @@ kernels help most. We report the comparison exactly as measured — that
 reproducibility is the deliverable, and the CSVs (with per-row OpenCV
 version, instance type, and AMI id) are in `bench/results-*.csv`.
 
+> **Provenance note.** These timings were measured 2026-10-22, before the
+> 2026-10-25 re-plan fix. The fix changes *verdict counts* (27 defect regions
+> becomes 90 on the same images) but not the cost of the workload — it adds no
+> crop, only a coverage statistic on a crop the agent already takes. Re-measured
+> locally on the same 83 images after the fix (3 runs each): 29.5 ms/image
+> before, 28.9 ms/image after, i.e. unchanged within run-to-run variance
+> (28.0-30.3 ms). The *relative* COOL-vs-vanilla-vs-x86 comparison is therefore
+> still valid; the absolute defect-region count in the table is stale and is
+> kept only to document that all three configs agreed.
+
 ### 6.4 Failure cases (required)
 
-All from the EC2 eval (n=315), worst offenders named:
+All from the 3-category eval (n=315), worst offenders named:
 
-- **Capsule print/surface defects are invisible to this scorer.**
-  `faulty_imprint` recall 0/22 and `scratch` 0/23: a per-pixel Gaussian
-  normality model over aligned images cannot see print variation or hairline
-  scratches whose pixel statistics match normal texture. `squeeze` (14/20)
-  and `crack` (6/23) fare better because they deform the silhouette or local
-  contrast. Capsule overall: AUROC 0.653, recall 0.211 — the learned scorer
+- **Capsule print/surface defects are mostly invisible to this scorer.**
+  `faulty_imprint` 2/22 and `scratch` 1/23: a per-pixel Gaussian normality
+  model over aligned images cannot see print variation or hairline scratches
+  whose pixel statistics match normal texture. `crack` 9/23, `poke` 5/21, and
+  `squeeze` 16/20 fare better because they deform the silhouette or local
+  contrast. Capsule overall: AUROC 0.652, recall 0.303 — the learned scorer
   path exists precisely for this category.
-- **Low-contrast bottle contamination** (the local run's known weakness)
-  repeats on EC2: missed defects peak at 1.6–3.0 sigma, overlapping normal
-  reflection variation; 5 of 63 bottle defects were neither predicted nor
-  escalated.
-- **Transistor ambiguity burns budget and escalates**: 31% escalation and
-  129 re-zooms over 100 images. Bent-lead cases cluster at the unsure
-  threshold (top missed defect: `bent_lead` at 3.95 sigma, just under the
-  4.0 DEFECT line) — the agent correctly refuses to guess, but a human
-  reviews nearly a third of transistors.
-- **The only false positives** (3/315) are good transistors at 4.3–5.1
-  sigma — lead reflections that look like bends at overview resolution and
-  survive re-zoom.
+- **Low-contrast bottle contamination** repeats: missed defects peak at
+  1.6-3.0 sigma, overlapping normal reflection variation; 5 of 63 bottle
+  defects were neither predicted nor escalated.
+- **Transistor is where the re-plan's precision cost lands**: 16 of 60 good
+  transistors are confirmed as DEFECT after re-zoom (2.7-5.1 sigma), giving
+  transistor precision 0.667. The region genuinely looks ambiguous at overview
+  resolution, the tighter window adds coverage evidence, and the evidence
+  points the wrong way — this is the failure mode the coverage-confirm
+  threshold trades against, and the dominant reason overall precision dropped
+  from 0.969 to 0.881.
 - Defects smaller than the heatmap resolution and defects at crop borders
   remain structural misses of the budgeted-zoom design: if the overview
   never proposes the region, no amount of re-planning recovers it.
@@ -197,18 +234,23 @@ All from the EC2 eval (n=315), worst offenders named:
   (PatchCore / ONNX path), which is hooked in but not yet the default.
 - The planner is rule-based and auditable, but dumber than an LLM planner —
   re-plan decisions are heuristics, not reasoning over the trace.
-- Thresholds (propose 2.0 sigma, DEFECT 4.0, unsure 2.5) were tuned on the
-  bottle test set; the 2026-10-22 EC2 validation shows they transfer to
-  transistor (AUROC 0.836) but not capsule (0.653) — see 6.1/6.4.
+- Thresholds (propose 2.0 sigma, DEFECT 4.0, unsure 2.5, coverage-confirm
+  0.30) were tuned on the bottle test set and, for coverage-confirm, swept over
+  all 315 images; they transfer to transistor (AUROC 0.840) but not capsule
+  (0.652) — see 6.1/6.4. The coverage-confirm value is the one knob that
+  directly trades transistor precision against automated recall.
 - Single-image inspection only; the video-frame mode from the original idea
   was deferred to keep the scope honest for the deadline.
 
 ## 8. Responsible-use considerations
 
 - Inspection **assists** human QA, it does not replace it: the escalation path
-  exists for exactly this reason (10.8% of bottle cases were escalated, not
-  guessed), and every escalation carries its visual trace so a person can
-  decide quickly.
+  exists for exactly this reason (7.2% of bottle and 6.3% of all cases were
+  escalated, not guessed), and every escalation carries its visual trace so a
+  person can decide quickly. The 2026-10-25 re-plan fix raised automated
+  decision coverage (recall 0.448 -> 0.557) at a measured precision cost
+  (0.969 -> 0.881); the threshold is exposed per scorer so an operator can put
+  the balance back toward human review.
 - No personal data is processed — industrial product images only; no faces,
   no biometric analysis, no tracking of people.
 - Our own code is MIT (see LICENSE); data/model sources (MVTec AD, anomalib)

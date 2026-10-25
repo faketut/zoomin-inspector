@@ -11,5 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# One image, two entry points (see docker-compose.yml): the default command
+# serves the FastAPI API on 8000; `python -m app.ui` serves Gradio on 7860.
 EXPOSE 8000 7860
 CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]

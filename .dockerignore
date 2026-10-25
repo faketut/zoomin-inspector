@@ -1,0 +1,13 @@
+# Build inputs only. Keeps the 49 MB of demo video in video/ and the local
+# MVTec download in data/ out of the image.
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+data/
+out/
+.env
+.DS_Store
+bench/*.csv
+video/

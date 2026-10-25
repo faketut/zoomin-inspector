@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "ARG"]
+ignore = [
+    "B008",  # FastAPI's `dep: T = Depends(...)` / `File(...)` is the documented idiom
+    "ARG002",  # interface methods may not use every argument
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -29,7 +29,7 @@ ZoomIn Inspector is an agent loop (`zoomin/agent.py`) orchestrating five tools:
 1. **`scan_overview`** — full-image anomaly heatmap from a classical per-pixel scorer
 2. **`zoom_crop`** — crops the top-k suspicious regions (the vision output decides the next tool call — this is the agentic-vision step)
 3. **`inspect_crop`** — re-scores the crop against aligned full-image statistics
-4. **`escalate`** — hands ambiguous cases to a human with the visual trace attached, instead of guessing
+4. **re-plan / `decide`** — re-zooms the ambiguous region, confirms it as a defect when the tighter window's coverage is high enough, and otherwise hands it to a human with the visual trace attached instead of guessing
 5. **`finalize_report`** — emits a defect report with localized masks
 
 Two engineering choices carry the quality:
@@ -63,11 +63,11 @@ The same pipeline then measured three MVTec categories on the instance (n=315): 
 
 - End-to-end agentic inspection loop with a reproducible benchmark harness and a cross-validated eval (local bottle 0.961 == EC2 bottle 0.961).
 - A benchmark result we reported against our own prize interest: stock OpenCV 5 beats COOL on this workload, with hypotheses and reproducible CSVs.
-- Precision 1.0 on 20 good bottles — zero false alarms — with 10.8% of bottle images and 17.8% overall escalated to a human rather than guessed.
+- Precision 1.0 on 20 good bottles — zero false alarms — with 7.2% of bottle images and 6.3% overall escalated to a human rather than guessed. Overall: AUROC 0.738, precision 0.881, recall 0.557 across 315 test images.
 
 ## 📉 Failure cases (required, and we agree they're the interesting part)
 
-Capsule is a real failure: **AUROC 0.653**, with `faulty_imprint` 0/22 and `scratch` 0/23 detected — a pixel-Gaussian scorer cannot see print defects. Transistor (0.836) burns budget and escalates 31% of the time. These are in the report, not hidden: the escalation path exists precisely because a silent wrong call costs more than an honest "I can't tell".
+Capsule is a real failure: **AUROC 0.652**, with `faulty_imprint` 2/22 and `scratch` 1/23 detected — a pixel-Gaussian scorer cannot see print defects. Transistor (0.840 AUROC) is where the re-plan's precision cost lands: 16 of 60 good transistors are confirmed as DEFECT, dropping transistor precision to 0.667. These are in the report, not hidden: the escalation path exists precisely because a silent wrong call costs more than an honest "I can't tell", and the coverage-confirm threshold is exposed per scorer so an operator can shift that balance back toward human review.
 
 ## 🔭 What's next
 

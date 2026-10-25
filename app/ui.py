@@ -2,10 +2,14 @@
 agent's full tool trace (the Agentic Vision evidence).
 
 Run:  python -m app.ui   (serves on :7860)
+
+The UI calls the agent in-process (no HTTP hop to the API); both entry points
+build their scorer with ``load_default_scorer`` and their thresholds with
+``InspectorConfig.for_scorer``, so the two never disagree about calibration.
 """
 
 import argparse
-import os
+import dataclasses
 
 import cv2
 import gradio as gr
@@ -13,34 +17,26 @@ import numpy as np
 
 from zoomin.agent import run_inspection
 from zoomin.config import InspectorConfig
-from zoomin.scoring import CoarseScorer, NormalityScorer
+from zoomin.scoring import load_default_scorer
 
 
-def _default_scorer():
-    """ZOOMIN_MODEL=<.npz> loads a fitted NormalityScorer (the configuration
-    behind the reported MVTec numbers); otherwise the single-image
-    CoarseScorer fallback is used."""
-    model = os.environ.get("ZOOMIN_MODEL")
-    if model and os.path.exists(model):
-        return NormalityScorer.load(model)
-    return CoarseScorer()
-
-
-_scorer = _default_scorer()
+_scorer = load_default_scorer()
+_config = InspectorConfig.for_scorer(_scorer)
 
 
 def inspect_image(img: np.ndarray, budget: int):
     if img is None:
-        return None, "upload an image first", None, None
+        return None, "upload an image first", [], []
     bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    rep = run_inspection(bgr, config=InspectorConfig(crop_budget=int(budget)),
+    rep = run_inspection(bgr, config=dataclasses.replace(_config, crop_budget=int(budget)),
                          scorer=_scorer)
     annotated_rgb = cv2.cvtColor(rep.annotated, cv2.COLOR_BGR2RGB)
     rows = [[r.region_id, r.verdict, round(r.score, 3), r.replanned,
              f"({r.box.x},{r.box.y},{r.box.w},{r.box.h})"] for r in rep.regions]
-    summary = (f"{rep.summary()['verdicts']} — "
+    v = rep.summary()["verdicts"]
+    summary = (f"{v['DEFECT']} defect · {v['ESCALATED']} escalated · {v['OK']} ok — "
                f"{len(rep.trace)} tool calls in {rep.elapsed_s:.2f}s "
-               f"(opencv {cv2.__version__})")
+               f"(opencv {cv2.__version__}, {type(_scorer).__name__})")
     return annotated_rgb, summary, rows, [s.to_dict() for s in rep.trace]
 
 

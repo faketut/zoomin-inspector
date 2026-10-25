@@ -4,7 +4,7 @@ __pycache__/
 *.pyo
 data/
 out/
-bench/*.csv
+bench/results.csv
 .env
 .DS_Store
 video/segments/

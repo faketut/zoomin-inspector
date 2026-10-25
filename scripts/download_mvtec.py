@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 from collections import Counter
+from pathlib import Path
 
 CATEGORIES = ["bottle", "cable", "capsule", "carpet", "grid", "hazelnut",
               "leather", "metal_nut", "pill", "screw", "tile", "toothbrush",
@@ -37,7 +38,7 @@ def main():
 
     idx_path = hf_hub_download("Voxel51/mvtec-ad", filename="samples.json",
                                repo_type="dataset")
-    samples = json.load(open(idx_path))["samples"]
+    samples = json.loads(Path(idx_path).read_text())["samples"]
     counts = Counter()
     for s in samples:
         cat = s["category"]["label"]

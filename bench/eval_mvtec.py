@@ -3,10 +3,12 @@
 Runs the full agent loop on every test image under data/mvtec/<cat>/test/
 and reports image-level detection metrics per category and overall.
 
-Default scorer is NormalityScorer, fit on the category's NORMAL training
-images (--train data/mvtec/<cat>/train/good, or a prefitted --model .npz):
-per-pixel Gaussian, score in absolute std-deviation units. CoarseScorer
-(single-image heuristic, no train data) remains available via --coarse.
+Scorer selection mirrors the app: ``--train`` fits a NormalityScorer on the
+category's NORMAL training images, ``--model`` loads a prefitted .npz,
+``--coarse`` uses the single-image CoarseScorer (no train data). Thresholds are
+never written out here — they come from the scorer via
+``InspectorConfig.for_scorer``, so an eval and the deployed service cannot
+disagree about calibration.
 
 Image-level rule (honest, fixed before seeing data):
   score  = max region inspect score (0.0 when no region proposed)
@@ -15,7 +17,7 @@ Image-level rule (honest, fixed before seeing data):
    not as a defect prediction.)
 
 Usage:
-  .venv/bin/python bench/eval_mvtec.py --data data/mvtec --train data/mvtec_train \
+  python bench/eval_mvtec.py --data data/mvtec --train data/mvtec_train \
       --out bench/eval_results.csv
 """
 
@@ -69,7 +71,7 @@ def main():
     ap.add_argument("--out", default="bench/eval_results.csv")
     ap.add_argument("--budget", type=int, default=8)
     ap.add_argument("--train", default=None,
-                    help="train-good root, e.g. /tmp/mvtec_train "
+                    help="train-good root, e.g. data/mvtec_train "
                          "(expects <cat>/train/good/*.png); fits NormalityScorer per category")
     ap.add_argument("--model", default=None,
                     help="prefitted NormalityScorer .npz (single category runs)")
@@ -79,23 +81,25 @@ def main():
                     help="use CoarseScorer instead of NormalityScorer (no train data needed)")
     args = ap.parse_args()
 
-    scorers = {}  # category -> scorer
-    configs = {}  # category -> config
+    if args.coarse and (args.train or args.model):
+        raise SystemExit("--coarse cannot be combined with --train/--model")
+    fixed_scorer = None
     if args.coarse:
-        default_scorer, default_config = CoarseScorer(), InspectorConfig(
-            crop_budget=args.budget, heat_threshold=0.15,
-            defect_threshold=0.55, unsure_threshold=0.20)
+        fixed_scorer = CoarseScorer()
     elif args.model:
-        default_scorer = NormalityScorer.load(args.model)
-        default_config = InspectorConfig(crop_budget=args.budget)
-    else:
-        if not args.train:
-            raise SystemExit("need --train <train-good root>, --model <model.npz>, or --coarse")
-        default_scorer, default_config = None, InspectorConfig(crop_budget=args.budget)
+        fixed_scorer = NormalityScorer.load(args.model)
+    elif not args.train:
+        raise SystemExit("need --train <train-good root>, --model <model.npz>, or --coarse")
+
+    scorers = {}  # category -> (scorer, config)
 
     def scorer_for(cat):
-        if default_scorer is not None:
-            return default_scorer, default_config
+        if fixed_scorer is not None:
+            if "fixed" not in scorers:
+                scorers["fixed"] = (fixed_scorer,
+                                    InspectorConfig.for_scorer(fixed_scorer,
+                                                               crop_budget=args.budget))
+            return scorers["fixed"]
         if cat not in scorers:
             paths = sorted(glob.glob(os.path.join(args.train, cat, "train", "good", "*.png")))
             if not paths:
@@ -108,12 +112,10 @@ def main():
                 os.makedirs(os.path.dirname(mp) or ".", exist_ok=True)
                 sc.save(mp)
                 print(f"  saved {mp}")
-            scorers[cat] = sc
-            configs[cat] = InspectorConfig(crop_budget=args.budget)
-        return scorers[cat], configs[cat]
-    rows = []
-    per_cat = {}
+            scorers[cat] = (sc, InspectorConfig.for_scorer(sc, crop_budget=args.budget))
+        return scorers[cat]
 
+    rows = []
     items = list(iter_images(args.data))
     print(f"{len(items)} test images")
     t_all = time.perf_counter()
@@ -146,13 +148,14 @@ def main():
         y = [r["label"] for r in rs]
         s = [r["score"] for r in rs]
         p = [r["pred"] for r in rs]
-        tp = sum(1 for a, b in zip(y, p) if a == 1 and b == 1)
-        fp = sum(1 for a, b in zip(y, p) if a == 0 and b == 1)
-        fn = sum(1 for a, b in zip(y, p) if a == 1 and b == 0)
+        tp = sum(1 for a, b in zip(y, p, strict=True) if a == 1 and b == 1)
+        fp = sum(1 for a, b in zip(y, p, strict=True) if a == 0 and b == 1)
+        fn = sum(1 for a, b in zip(y, p, strict=True) if a == 1 and b == 0)
+        tn = sum(1 for a, b in zip(y, p, strict=True) if a == 0 and b == 0)
         return {
             "n": len(rs),
             "auroc": auroc(s, y),
-            "acc": (tp + sum(1 for a, b in zip(y, p) if a == 0 and b == 0)) / len(rs),
+            "acc": (tp + tn) / len(rs),
             "prec": tp / (tp + fp) if tp + fp else 0.0,
             "rec": tp / (tp + fn) if tp + fn else 0.0,
             "esc_rate": sum(r["escalated"] for r in rs) / len(rs),
