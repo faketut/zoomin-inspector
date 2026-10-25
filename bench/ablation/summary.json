@@ -1,0 +1,50 @@
+{
+  "1": {
+    "auroc": 0.7370397508701227,
+    "acc": 0.6412698412698413,
+    "precision": 0.8778625954198473,
+    "recall": 0.5424528301886793,
+    "escalated": 0.05396825396825397,
+    "detected": 115,
+    "n_defects": 212,
+    "silent_miss": 86,
+    "no_region_at_all": 79,
+    "ms_per_image": 10.897079365079366
+  },
+  "2": {
+    "auroc": 0.7394211394028211,
+    "acc": 0.6476190476190476,
+    "precision": 0.8796992481203008,
+    "recall": 0.5518867924528302,
+    "escalated": 0.06349206349206349,
+    "detected": 117,
+    "n_defects": 212,
+    "silent_miss": 84,
+    "no_region_at_all": 79,
+    "ms_per_image": 10.474730158730159
+  },
+  "4": {
+    "auroc": 0.738642608536362,
+    "acc": 0.6507936507936508,
+    "precision": 0.8805970149253731,
+    "recall": 0.5566037735849056,
+    "escalated": 0.06349206349206349,
+    "detected": 118,
+    "n_defects": 212,
+    "silent_miss": 84,
+    "no_region_at_all": 79,
+    "ms_per_image": 12.526761904761905
+  },
+  "8": {
+    "auroc": 0.7377266898699395,
+    "acc": 0.6507936507936508,
+    "precision": 0.8805970149253731,
+    "recall": 0.5566037735849056,
+    "escalated": 0.06349206349206349,
+    "detected": 118,
+    "n_defects": 212,
+    "silent_miss": 84,
+    "no_region_at_all": 79,
+    "ms_per_image": 17.06920634920635
+  }
+}

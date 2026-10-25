@@ -148,23 +148,47 @@ should raise it.
 
 ### 6.2 Agentic loop ablations
 
-From the same eval (n=315; the trace of every image is in the CSV's
-`n_regions` / `replans` / `escalated` columns):
+**Crop-budget ablation (the honest one).** The detection numbers above use a
+crop budget of 8. Holding everything else fixed and varying only the budget
+isolates what the agentic loop actually contributes
+(`bench/ablation_budget.py`, per-budget CSVs in `bench/ablation/`, n=315):
 
-- **The escalation path still rescues defects a single-shot classifier would
-  lose.** Counting a defect as "surfaced to a human" when it was predicted
-  DEFECT *or* escalated: bottle 58/63 (92.1%), transistor 33/40 (82.5%),
-  capsule 37/109 (33.9%). Escalation alone accounts for 5 (bottle), 1
-  (transistor), and 4 (capsule) of those; the rest are decided by the agent.
-- **Re-planning is exercised constantly**: 235 re-zoom events across 315
-  images (transistor alone: 133 re-zooms over 100 images — bent/misplaced
-  leads routinely need a second, tighter look). Vision output changing the
-  next tool call is the norm in the trace, not a demo path. After the fix the
-  re-zoom also *confirms* defects rather than only escalating them.
-- **False alarms are now concentrated in one category**: bottle and capsule
-  precision are both 1.000 (0 false positives); all 16 false positives are
-  good transistors at 2.7-5.1 sigma — lead reflections that look like bends at
-  overview resolution and reach enough coverage to confirm on re-zoom.
+| Budget | AUROC | Accuracy | Precision | Recall | Escalated | Defects detected | ms/image |
+|---|---|---|---|---|---|---|---|
+| 1 | 0.737 | 0.641 | 0.878 | 0.542 | 5.4% | 115/212 | 10.9 |
+| 2 | 0.739 | 0.648 | 0.880 | 0.552 | 6.3% | 117/212 | 10.5 |
+| 4 | 0.739 | 0.651 | 0.881 | 0.557 | 6.3% | 118/212 | 12.5 |
+| 8 | 0.738 | 0.651 | 0.881 | 0.557 | 6.3% | 118/212 | 17.1 |
+
+Going from one crop to eight adds **3 detections out of 212 defects** and no
+false positives; AUROC moves 0.737 -> 0.738. Everything the pipeline can detect
+is essentially already decided by the overview heatmap. Per-image cost is
+dominated by fixed overhead (the heatmap is scored over the whole image either
+way), so the extra crops are nearly free — cheap, but also nearly inert.
+
+This bounds the honest claim for the Agentic Vision path: on MVTec, the loop
+buys auditability and a human-review channel, not detection accuracy. The trace
+is a real deliverable; "the agent finds more defects" is not supported by this
+benchmark, and an earlier version of this section leaned on activity counts
+(235 re-zooms, 1 escalation path) as if they were evidence of value.
+
+**Why the loop cannot contribute more: silent misses.** 79 of 212 defect images
+have the overview propose **no region at all** (capsule 69/109 = 63%, transistor
+6/40 = 15%, bottle 4/63 = 6%). If the overview proposes nothing, no re-zoom,
+re-plan or escalation can intervene, so 40% of defects (84/212) pass completely
+silently. This is the binding constraint on the design, and it sits upstream of
+the agent, in the scorer — see §6.4 and §7.
+
+**Where escalation does earn its keep.** Counting a defect as "surfaced to a
+human" when it was predicted DEFECT *or* escalated: bottle 58/63 (92.1%),
+transistor 33/40 (82.5%), capsule 37/109 (33.9%). The gap between those numbers
+and the recall column is the escalation channel's real contribution, and it is
+why 6.3% of images overall reach a human instead of being silently passed.
+
+> **Method note.** These four runs differ only in `crop_budget`; scorer,
+> thresholds, and image set are identical. Rejected alternative: reporting the
+> number of re-zoom events or trace steps as evidence of value — those measure
+> activity, not outcome.
 
 ### 6.3 COOL benchmark (Best Use of COOL evidence)
 
@@ -234,6 +258,15 @@ All from the 3-category eval (n=315), worst offenders named:
   (PatchCore / ONNX path), which is hooked in but not yet the default.
 - The planner is rule-based and auditable, but dumber than an LLM planner —
   re-plan decisions are heuristics, not reasoning over the trace.
+- **The agentic loop contributes little to detection on this benchmark.** The
+  crop-budget ablation (§6.2) shows 1 crop -> 8 crops adds 3 detections out of
+  212 and no false positives; AUROC is flat at 0.737-0.739. The loop's measured
+  value is auditability plus a human-review channel, not accuracy. Anyone
+  evaluating this design should treat that number as the honest ceiling.
+- **The binding constraint is upstream of the agent.** 79 of 212 defect images
+  (40% of all defects pass completely silently) get no region proposed at all,
+  so no downstream mechanism can act. Fixing the overview scorer is worth far
+  more than any improvement to the loop.
 - Thresholds (propose 2.0 sigma, DEFECT 4.0, unsure 2.5, coverage-confirm
   0.30) were tuned on the bottle test set and, for coverage-confirm, swept over
   all 315 images; they transfer to transistor (AUROC 0.840) but not capsule

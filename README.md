@@ -11,6 +11,15 @@ latency/throughput/cost benchmark against vanilla baselines.
 
 **Focus paths:** Agentic Vision + Best Use of COOL.
 
+**What this actually delivers, measured.** On MVTec AD (bottle/transistor/
+capsule, n=315) the overview heatmap decides almost everything: a crop-budget
+ablation (1 crop vs 8, everything else fixed) adds **3 detections out of 212
+defects** and no false positives, at AUROC 0.737 vs 0.738. The agent loop's real
+contribution is the audit trail and the human-review channel, not detection
+accuracy. 40% of defects (84/212) pass silently because the overview proposes no
+region at all — a scorer limitation no amount of re-zooming can recover. See
+`docs/REPORT.md` §6.2 and §7; reproduce with `bench/ablation_budget.py`.
+
 ## Quickstart
 
 ```bash

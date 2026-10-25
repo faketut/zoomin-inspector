@@ -30,6 +30,8 @@ ZoomIn Inspector is an agent loop (`zoomin/agent.py`) orchestrating five tools:
 2. **`zoom_crop`** — crops the top-k suspicious regions (the vision output decides the next tool call — this is the agentic-vision step)
 3. **`inspect_crop`** — re-scores the crop against aligned full-image statistics
 4. **re-plan / `decide`** — re-zooms the ambiguous region, confirms it as a defect when the tighter window's coverage is high enough, and otherwise hands it to a human with the visual trace attached instead of guessing
+
+Measured honestly: a crop-budget ablation (1 crop vs 8, everything else fixed) adds 3 detections out of 212 defects and no false positives — the overview heatmap decides almost everything, and the loop's real contribution is the audit trail and the human-review channel. 40% of defects (84/212) pass silently because the overview proposes no region at all, which no amount of re-zooming can recover.
 5. **`finalize_report`** — emits a defect report with localized masks
 
 Two engineering choices carry the quality:
