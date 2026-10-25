@@ -12,17 +12,21 @@ ffmpeg -y -v error -f lavfi -i color=c=black:s=1920x1080:r=30 \
   -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='LIVE DEMO — the real app, recorded live':fontcolor=white:fontsize=44:x=(w-text_w)/2:y=(h-text_h)/2" \
   -t 1.6 -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 128k live/gap.mp4
 
-# 2) Live section: re-cut acts from the raw Playwright webm, speed 1.32x,
+# 2) Live section: re-cut acts from the raw Playwright webm, speed 1.5x,
 #    scale/pad to 1920x1080@30, silent audio to match the slide segments.
-W=$(ls live/raw/*.webm)
+#    Trims follow the recorder's act timeline (~62s per act: load, upload,
+#    inspect, 45s marker wait, hold, scroll, reload). Re-derive them from
+#    scene changes if the recorder's waits change. Speed chosen so the
+#    combined video stays under the 300s cap with the longer seg6 (2026-10-25).
+W=$(ls -t live/raw/*.webm | head -1)
 ffmpeg -y -v error -i "$W" -f lavfi -i anullsrc=r=24000:cl=mono -filter_complex "\
 [0:v]trim=2:21,setpts=PTS-STARTPTS[a1];\
 [0:v]trim=53.5:62.5,setpts=PTS-STARTPTS[a1b];\
 [0:v]trim=64.5:83.5,setpts=PTS-STARTPTS[a2];\
 [0:v]trim=115.6:124.6,setpts=PTS-STARTPTS[a2b];\
 [0:v]trim=126.6:145.6,setpts=PTS-STARTPTS[a3];\
-[0:v]trim=178.9:187.9,setpts=PTS-STARTPTS[a3b];\
-[a1][a1b][a2][a2b][a3][a3b]concat=n=6:v=1:a=0,setpts=PTS/1.32,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30[v]" \
+[0:v]trim=177:185.5,setpts=PTS-STARTPTS[a3b];\
+[a1][a1b][a2][a2b][a3][a3b]concat=n=6:v=1:a=0,setpts=PTS/1.5,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30[v]" \
   -map "[v]" -map 1:a -shortest -c:v libx264 -preset medium -crf 20 \
   -pix_fmt yuv420p -c:a aac -b:a 128k live/live_mid.mp4
 

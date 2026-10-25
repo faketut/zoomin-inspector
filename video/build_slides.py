@@ -228,6 +228,9 @@ def s6():
         ("Limitation, stated plainly: the classical scorer is a baseline. "
          "Fine textures want the learned scorer — OpenCV 5 DNN hook "
          "(ONNXScorer) is already in the repo.", None),
+        ("Ablation: one crop versus eight adds only 3 detections out of "
+         "212 — the overview decides nearly everything; the loop's value "
+         "is the audit trail and review channel.", None),
     ], y=250, size=33)
     y = 800
     d.text((100, y), "ZoomIn Inspector: inspect like a human, spend like a miser.",
