@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
 """Record a live session of the real ZoomIn Gradio UI with Playwright's
 stock Chromium (the meta-chromium build blocks loopback via LNA checks).
-Three real inspections: DEFECT bottle, ESCALATED bottle, clean bottle."""
-import os, shutil, sys
+Three real inspections: DEFECT bottle, ESCALATED bottle, clean bottle.
+
+Needs the UI running (`ZOOMIN_MODEL=models/bottle_normality.npz python -m app.ui`)
+and the MVTec bottle test images under data/mvtec (gitignored; fetch with
+scripts/download_mvtec.py). Playwright is not a runtime or test dependency:
+
+    pip install playwright && playwright install chromium
+"""
+import os
+import shutil
+
 from playwright.sync_api import sync_playwright
 
-ROOT = os.path.expanduser("~/workspace/zoomin-inspector")
+# Repo root, derived from this file: video/live/record_live_demo.py -> repo/
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RAW = os.path.join(ROOT, "video/live/raw")
 ACTS = [
     ("data/mvtec/bottle/test/broken_large/001-94.png", "DEFECT"),
     ("data/mvtec/bottle/test/broken_large/000-94.png", "ESCALATED"),
-    ("data/mvtec/bottle/test/good/001-95.png", "tool calls"),
+    # "0 defect" only appears in the summary when the clean bottle really
+    # passed; a bare "tool calls" marker matches every result and asserts nothing.
+    ("data/mvtec/bottle/test/good/001-95.png", "0 defect"),
 ]
 
 shutil.rmtree(RAW, ignore_errors=True)
