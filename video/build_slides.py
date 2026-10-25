@@ -3,7 +3,7 @@
 Usage: python3 build_slides.py  -> video/slides/s1..s6.png
 Numbers reflect the MVTec bottle run (2026-10-20) and the EC2 benchmark
 results (2026-10-22): COOL 30.69 / vanilla-Graviton 25.70 / vanilla-x86 41.96
-ms/image; bottle 0.961, transistor 0.836, capsule 0.653.
+ms/image; bottle 0.961, transistor 0.840, capsule 0.652.
 """
 
 from pathlib import Path
@@ -164,8 +164,8 @@ def s4():
     y = 250
     cards = [("0.961", "AUROC (83 test images)", GREEN),
              ("1.000", "precision — 20/20 good bottles, zero false alarms", GREEN),
-             ("0.794", "recall — 13 hard misses, low-contrast / small breaks", ACCENT),
-             ("10.8%", "escalated to a human, not guessed", WARN)]
+             ("0.841", "recall — 10 hard misses, low-contrast / small breaks", ACCENT),
+             ("7.2%", "escalated to a human, not guessed", WARN)]
     x = 100
     for h, s, c in cards:
         card(d, x, y, 400, 300, h, s, hcolor=c)
@@ -177,7 +177,7 @@ def s4():
         ("Synthetic controls: AUROC 1.0, 15.6 ms/image. "
          "Scorer: NumPy/OpenCV only, no learned weights, ~0.5 MB/category.", None),
         ("Caveat: thresholds tuned on this set; transistor/capsule were run "
-         "on EC2 (0.836 / 0.653) — see the cloud slide.", None),
+         "on EC2 (0.840 / 0.652) — see the cloud slide.", None),
     ], y, size=30)
     footer(d, 4)
     img.save(OUT / "s4.png")
@@ -208,9 +208,9 @@ def s5():
         x += 560
     bullets(d, [("Honest headline: stock OpenCV 5.0.0 beat COOL by ~16% on "
                  "the same Graviton4 hardware — reported in the paper. MVTec "
-                 "on the instance: bottle 0.961, transistor 0.836, capsule "
-                 "0.653 — capsule's imprint/scratch misses are documented, "
-                 "not hidden.", None)], y + 300, size=28)
+                 "on the instance: bottle 0.961, transistor 0.840, capsule "
+                 "0.652 — capsule's imprint/scratch misses (2/22, 1/23) and "
+                 "transistor's 16 false positives are documented, not hidden.", None)], y + 300, size=28)
     footer(d, 5)
     img.save(OUT / "s5.png")
 

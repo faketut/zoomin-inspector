@@ -26,12 +26,15 @@ ffmpeg -y -v error -i "$W" -f lavfi -i anullsrc=r=24000:cl=mono -filter_complex 
   -map "[v]" -map 1:a -shortest -c:v libx264 -preset medium -crf 20 \
   -pix_fmt yuv420p -c:a aac -b:a 128k live/live_mid.mp4
 
-# 3) Join everything (re-encode for uniform parameters).
+# 3) Join everything (re-encode for uniform parameters). Encode to a temp
+#    file first: a killed run must never leave a truncated mp4 at the
+#    delivery path (learned 2026-10-24, when a restart did exactly that).
 printf "file '%s'\n" "$PWD/segments/seg1.mp4" "$PWD/segments/seg2.mp4" \
   "$PWD/segments/seg3.mp4" "$PWD/segments/seg4.mp4" "$PWD/live/gap.mp4" \
   "$PWD/live/live_mid.mp4" "$PWD/segments/seg5.mp4" "$PWD/segments/seg6.mp4" \
   > live/combined_list.txt
 ffmpeg -y -v error -f concat -safe 0 -i live/combined_list.txt \
   -c:v libx264 -preset fast -crf 21 -pix_fmt yuv420p -c:a aac -b:a 128k \
-  out/zoomin-combined-demo.mp4
+  live/combined_tmp.mp4
+mv live/combined_tmp.mp4 out/zoomin-combined-demo.mp4
 ffprobe -v error -show_entries format=duration -of csv=p=0 out/zoomin-combined-demo.mp4
