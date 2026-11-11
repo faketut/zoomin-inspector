@@ -18,30 +18,11 @@ accuracy. 40% of defects (84/212) pass silently because the overview proposes no
 region at all — a scorer limitation no amount of re-zooming can recover. See
 `docs/REPORT.md` §6.2 and §7; reproduce with `bench/ablation_budget.py`.
 
-## Live demo
+![Live demo: upload a bottle photo, the agent inspects it](assets/zoomin-live-demo.gif)
 
-<video src="assets/zoomin-live-demo.mp4" width="1280" controls></video>
-
-The real app, recorded live: upload a bottle photo and the agent inspects it —
-2 DEFECT regions on the first broken bottle, 3 DEFECT + 2 ESCALATED on the
-second, clean pass on the third — with the full tool trace on screen.
-
-Run it yourself:
-
-```bash
-ZOOMIN_MODEL=models/bottle_normality.npz python -m app.ui   # Gradio UI on :7860
-```
-
-Open http://127.0.0.1:7860, upload a bottle image, and hit Inspect. Try these
-from MVTec AD (`python scripts/download_mvtec.py --categories bottle --out data/mvtec`):
-
-- `data/mvtec/bottle/test/broken_large/001-94.png` → 2 DEFECT regions
-- `data/mvtec/bottle/test/broken_large/000-94.png` → 3 DEFECT + 2 ESCALATED regions
-- `data/mvtec/bottle/test/good/001-95.png` → clean pass ("0 defect")
-
-The region table and the full agent tool trace appear under each result; the
-crop-budget slider runs 1–16. API alternative: `uvicorn app.api:app --port 8000`
-(`GET /health`, `POST /inspect`).
+*The real app, recorded live: upload a broken bottle photo, the agent inspects it —
+2 DEFECT regions, verdict table, and full tool trace on screen. Full 1:40 recording:
+[assets/zoomin-live-demo.mp4](assets/zoomin-live-demo.mp4).*
 
 ## Quickstart
 
