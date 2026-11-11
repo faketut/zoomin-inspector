@@ -1,8 +1,8 @@
-# ZoomIn Inspector — Technical Report (draft)
+# ZoomIn Inspector — Technical Report
 
-> Fill each section before submission. The competition requires: problem, users,
-> architecture, OpenCV 5 implementation, AWS deployment, evaluation, limitations,
-> responsible-use considerations — plus evaluation evidence **including failure cases**.
+> Covers: problem, users, architecture, OpenCV 5 implementation, AWS deployment,
+> evaluation, limitations, responsible-use considerations — plus evaluation evidence
+> **including failure cases**.
 
 ## 1. Problem
 
@@ -87,7 +87,7 @@ subscription "Cloud Optimized OpenCV for AWS Graviton4", 7-day free trial).
   `graviton/` and `x86/` prefixes.
 - **Security group** `zoomin-sg`: 22 (deploy), 8000 (FastAPI), 7860 (Gradio).
   Instances are terminated after the runs; the group is for the deploy window.
-- **Judges' endpoint**: `http://<graviton-public-dns>:8000` — `GET /health`
+- **Live endpoint** (during the run): `http://<graviton-public-dns>:8000` — `GET /health`
   returned `{"status": "ok", "opencv": "5.0.0"}` from the running instance.
   The deployment is reproducible from `docs/AWS_DEPLOY.md` (note: that runbook
   predates the Graviton4 subscription — the instance family is c8g, not c7g).

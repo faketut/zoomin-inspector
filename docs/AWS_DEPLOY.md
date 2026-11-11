@@ -1,17 +1,16 @@
 # AWS Deployment Runbook — ZoomIn Inspector
 
-Target: OpenCV AI Competition 2026 — substantive OpenCV 5 workload + meaningful
-AWS component, with reproducible COOL-vs-vanilla benchmark evidence.
+Target: a substantive OpenCV 5 workload + meaningful AWS component, with
+reproducible COOL-vs-vanilla benchmark evidence.
 
 **Region:** `us-east-1` (safest for Marketplace AMI availability; `ca-central-1`
 works if the COOL AMI is listed there).
 
 ## 0. Prerequisites (your AWS account)
 
-1. AWS account (new accounts may qualify for $100 free-tier credits — see the
-   competition page). Do all of this in `us-east-1`.
+1. AWS account (new accounts may qualify for $100 free-tier credits). Do all of this in `us-east-1`.
 2. A key pair: EC2 → Key Pairs → Create key pair (`zoomin-key`, `.pem`) — keep the file safe.
-3. Push this repo to GitHub (private is fine — the competition allows private repos):
+3. Push this repo to GitHub (private is fine):
    ```bash
    gh repo create faketut/zoomin-inspector --private --source=. --push
    ```
@@ -37,10 +36,10 @@ Create `zoomin-sg` with inbound rules:
 | Port | Source | Purpose |
 |---|---|---|
 | 22 | your IP | SSH |
-| 8000 | 0.0.0.0/0 (demo window only) | FastAPI for judges |
+| 8000 | 0.0.0.0/0 (demo window only) | FastAPI |
 | 7860 | 0.0.0.0/0 (demo window only) | Gradio UI |
 
-Lock 8000/7860 back down after judging — the competition scores responsible operation.
+Lock 8000/7860 back down after the demo window — leaving them open is a security risk.
 
 ## 4. Launch the Graviton instance (config A + B)
 
@@ -53,7 +52,7 @@ Lock 8000/7860 back down after judging — the competition scores responsible op
 ssh -i zoomin-key.pem ubuntu@<instance-public-dns>
 ```
 
-## 5. Verify the COOL runtime (do this first — it's the award evidence)
+## 5. Verify the COOL runtime (do this first — it proves which OpenCV build is actually running)
 
 ```bash
 ls /opt/cool                          # discover the bundled venvs
@@ -127,12 +126,11 @@ aws s3 sync bench/ s3://zoomin-inspector-<yourname>/results/<config>/
 Back home: download the three CSVs, paste the comparison table into
 `docs/REPORT.md` §6.3, and fill in the eval numbers (§6.1, §6.2, §6.4).
 
-## 11. Judges' endpoint
+## 11. Live endpoint
 
 Keep the Graviton instance running while you record the demo video:
 `http://<instance-public-dns>:8000` (API) and `:7860` if you also run the UI
-(`$COOLPY -m app.ui --server-name 0.0.0.0`). The submission also accepts a live
-screen-share demo instead of a public endpoint.
+(`$COOLPY -m app.ui --server-name 0.0.0.0`). A live screen-share demo works as an alternative to a public endpoint.
 
 ## 12. Cleanup (cost control)
 

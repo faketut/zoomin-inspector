@@ -2,7 +2,7 @@
 
 ```mermaid
 flowchart TD
-    U[User / Judge] -->|upload image| API[FastAPI :8000\nPOST /inspect]
+    U[User] -->|upload image| API[FastAPI :8000\nPOST /inspect]
     U -->|browser| UI[Gradio :7860\nannotated + trace viewer]
     API --> AG[Agent loop\nzoomin/agent.py]
     UI --> AG

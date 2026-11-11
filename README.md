@@ -1,6 +1,6 @@
 # ZoomIn Inspector
 
-An **agentic active-perception defect inspector** built for the OpenCV AI Competition 2026.
+An **agentic active-perception defect inspector**.
 
 Instead of scoring a whole image in one shot, an inspector agent works under a fixed
 **crop budget**: it scans the overview for a coarse anomaly heatmap, spends its budget
@@ -8,8 +8,6 @@ zooming into the most suspicious regions, re-plans (tighter re-zoom) when uncert
 and escalates ambiguous cases to a human — logging a full perception → decision → action
 trace. The same core workload runs on AWS Graviton via the COOL AMI with a reproducible
 latency/throughput/cost benchmark against vanilla baselines.
-
-**Focus paths:** Agentic Vision + Best Use of COOL.
 
 **What this actually delivers, measured.** On MVTec AD (bottle/transistor/
 capsule, n=315) the overview heatmap decides almost everything: a crop-budget
@@ -20,6 +18,23 @@ accuracy. 40% of defects (84/212) pass silently because the overview proposes no
 region at all — a scorer limitation no amount of re-zooming can recover. See
 `docs/REPORT.md` §6.2 and §7; reproduce with `bench/ablation_budget.py`.
 
+## Live demo
+
+```bash
+ZOOMIN_MODEL=models/bottle_normality.npz python -m app.ui   # Gradio UI on :7860
+```
+
+Open http://127.0.0.1:7860, upload a bottle image, and hit Inspect. Try these
+from MVTec AD (`python scripts/download_mvtec.py --categories bottle --out data/mvtec`):
+
+- `data/mvtec/bottle/test/broken_large/001-94.png` → 2 DEFECT regions
+- `data/mvtec/bottle/test/broken_large/000-94.png` → 3 DEFECT + 2 ESCALATED regions
+- `data/mvtec/bottle/test/good/001-95.png` → clean pass ("0 defect")
+
+The region table and the full agent tool trace appear under each result; the
+crop-budget slider runs 1–16. API alternative: `uvicorn app.api:app --port 8000`
+(`GET /health`, `POST /inspect`).
+
 ## Quickstart
 
 ```bash
@@ -28,11 +43,11 @@ pip install -r requirements.txt
 
 # Inspect one image (no server needed). Use your own image, or download MVTec:
 #   python scripts/download_mvtec.py --categories bottle --out data/mvtec
-python -m zoomin.agent data/mvtec/bottle/test/broken_large/000.png --out out/
+python -m zoomin.agent data/mvtec/bottle/test/broken_large/001-94.png --out out/
 
 # With the fitted model behind the reported numbers:
 ZOOMIN_MODEL=models/bottle_normality.npz \
-  python -m zoomin.agent data/mvtec/bottle/test/broken_large/000.png --out out/
+  python -m zoomin.agent data/mvtec/bottle/test/broken_large/001-94.png --out out/
 
 # API + UI
 uvicorn app.api:app --port 8000        # POST /inspect
@@ -46,8 +61,7 @@ pip install -r requirements-dev.txt
 python -m pytest tests/
 ```
 
-`GET /health` reports the runtime `cv2.__version__` and the active scorer — the
-COOL-vs-vanilla evidence the Best Use of COOL award asks for.
+`GET /health` reports the runtime `cv2.__version__` and the active scorer.
 
 Without `ZOOMIN_MODEL`, the service uses `CoarseScorer` (no training data) with
 its own calibrated thresholds. With `ZOOMIN_MODEL=<fitted .npz>` it uses
@@ -56,27 +70,30 @@ silent fallback to the weaker scorer.
 
 ## How it works
 
-```
-upload image
-    │  scan_overview  → coarse heatmap (classical OpenCV; ONNX scorer hook via OpenCV 5 DNN)
-    ▼
-propose top-k regions ──▶ zoom_crop ──▶ inspect_crop ──▶ verdict
-   (from the heatmap:        ▲                │
-    vision sets the       re-zoom         score ≥ defect → DEFECT
-    next tool call)       (re-plan)       unsure         → re-plan: coverage ≥ confirm → DEFECT
-                                             else                       → ESCALATE
-                                             else        → OK
-    │                                              │
-    └──────── finalize_report: verdicts + full tool trace + annotated image
+```mermaid
+flowchart TD
+    IMG["upload image"] --> SCAN["scan_overview — coarse heatmap\nclassical OpenCV; ONNX scorer hook via OpenCV 5 DNN"]
+    SCAN --> PROP["propose top-k regions\nfrom the heatmap"]
+    PROP --> ZOOM["zoom_crop"]
+    ZOOM --> INSP["inspect_crop\npeak heat + coverage"]
+    INSP --> V{"verdict"}
+    V -->|"score ≥ defect"| DEF["DEFECT"]
+    V -->|"unsure"| RZ["re-zoom — tighter window\nnested inside the first crop"]
+    RZ --> COV{"coverage ≥ confirm?"}
+    COV -->|"yes"| DEF
+    COV -->|"no"| ESC["ESCALATE to human"]
+    V -->|"else"| OK["OK"]
+    DEF --> FIN["finalize_report\nverdicts + full tool trace + annotated image"]
+    ESC --> FIN
+    OK --> FIN
 ```
 
 The agent loop lives in `zoomin/agent.py`. Every tool call is logged with its inputs,
-outputs, and rationale — that trace is the Agentic Vision evidence (vision results
-*change* the next tool call: heatmap → crop coordinates, inspection coverage → re-zoom
-vs escalate). The re-plan reads *coverage* (fraction of the tighter window that is hot),
-not peak heat: the re-zoom window is nested inside the first crop, so its peak heat can
-only stay level or drop, while coverage reflects how much of the tighter frame the
-defect fills.
+outputs, and rationale — the trace proves vision results *change* the next tool call:
+heatmap → crop coordinates, inspection coverage → re-zoom vs escalate. The re-plan reads
+*coverage* (fraction of the tighter window that is hot), not peak heat: the re-zoom window
+is nested inside the first crop, so its peak heat can only stay level or drop, while
+coverage reflects how much of the tighter frame the defect fills.
 
 ## Repo map
 
@@ -90,7 +107,7 @@ defect fills.
 | `app/ui.py` | Gradio UI: annotated image, region table, trace viewer |
 | `bench/benchmark.py` | Workload benchmark → ms/image, images/sec, $/10K images, CSV |
 | `scripts/download_mvtec.py` | Fetch MVTec AD categories (HF mirror) |
-| `docs/REPORT.md` | Technical report skeleton (competition-required sections) |
+| `docs/REPORT.md` | Technical report: problem, architecture, evaluation, limitations |
 | `docs/architecture.md` | Architecture diagram + component table |
 
 ## Datasets
@@ -101,7 +118,7 @@ defect fills.
 
 Demo on 2–3 categories (bottle / transistor / capsule).
 
-## AWS deployment (competition requirement)
+## AWS deployment
 
 Simple, reproducible, one-command:
 
@@ -113,7 +130,7 @@ Simple, reproducible, one-command:
    as the benchmark baseline — same container, same script, three configs.
 
 Full step-by-step runbook (account setup → AMI subscribe → 3-config benchmark →
-judges' endpoint → cleanup): [docs/AWS_DEPLOY.md](docs/AWS_DEPLOY.md).
+live endpoint → cleanup): [docs/AWS_DEPLOY.md](docs/AWS_DEPLOY.md).
 
 ```bash
 # on each instance:
@@ -122,23 +139,11 @@ python bench/benchmark.py --images /app/data/mvtec/bottle/test --config cool-gra
     --dollars-per-hour 0.1718 --out bench/results.csv
 ```
 
-## Benchmark protocol (Best Use of COOL evidence)
+## Benchmark protocol
 
 Same script, same N images, three runs: (A) COOL on Graviton, (B) vanilla pip
 opencv on Graviton, (C) vanilla pip opencv on x86. Report: ms/image, images/sec,
 $/10K images. Keep the CSVs in `bench/` and paste the table into `docs/REPORT.md`.
-
-## Competition checklist
-
-- [x] OpenCV 5 substantive image analysis (`cv2.__version__` major version asserted in tests)
-- [x] Meaningful AWS component (S3 + EC2 serving + benchmark)
-- [x] Agentic Vision: trace proves vision output changes later tool calls
-- [x] COOL path: Graviton AMI + reproducible benchmark harness
-- [x] Pinned dependencies (`requirements.txt`)
-- [x] Architecture diagram (`docs/architecture.md`)
-- [x] Evaluation incl. failure cases (`docs/REPORT.md` §6)
-- [x] Final report numbers (EC2 runs 2026-10-22: benchmarks + 3-category eval in `docs/REPORT.md`, CSVs in `bench/`)
-- [x] 5-min demo video (combined, 4:57, post-fix numbers + ablation; `video/out/zoomin-combined-demo.mp4`)
 
 ## Troubleshooting
 
