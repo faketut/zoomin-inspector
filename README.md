@@ -20,6 +20,14 @@ region at all — a scorer limitation no amount of re-zooming can recover. See
 
 ## Live demo
 
+<video src="assets/zoomin-live-demo.mp4" width="1280" controls></video>
+
+The real app, recorded live: upload a bottle photo and the agent inspects it —
+2 DEFECT regions on the first broken bottle, 3 DEFECT + 2 ESCALATED on the
+second, clean pass on the third — with the full tool trace on screen.
+
+Run it yourself:
+
 ```bash
 ZOOMIN_MODEL=models/bottle_normality.npz python -m app.ui   # Gradio UI on :7860
 ```
