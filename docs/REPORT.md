@@ -58,9 +58,9 @@ threshold-binding call, so the UI and the API cannot diverge.
   and are bound by `InspectorConfig.for_scorer`, so an entry point cannot pair
   a scorer with thresholds from another scorer's units.
 - **Learned path**: `ONNXScorer` hook uses the OpenCV 5 DNN module (rewritten engine,
-  ENGINE_AUTO, CPU-optimized) for a drop-in learned scorer; `patchcore_adapter.py`
-  documents the anomalib PatchCore integration (memory bank built from normal
-  images only, CPU, minutes).
+  ENGINE_AUTO, CPU-optimized) for a drop-in learned scorer. (An anomalib PatchCore
+  adapter was sketched and removed in a 2026-11-11 cleanup: it was never imported
+  by any code path, and the ONNX hook is the learned scorer in the repo.)
 - Runtime OpenCV version is asserted in tests and reported by `GET /health`.
 
 ## 5. AWS deployment

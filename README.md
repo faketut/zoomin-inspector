@@ -85,7 +85,6 @@ defect fills.
 | `zoomin/scoring.py` | Coarse heatmap scorer (classical OpenCV baseline) + `ONNXScorer` hook (OpenCV 5 DNN, ENGINE_AUTO) |
 | `zoomin/tools.py` | `scan_overview`, `zoom_crop`, `inspect_crop`, `strongest_sub_box` |
 | `zoomin/agent.py` | Evidence-driven loop with crop budget, re-planning, escalation, `finalize_report` |
-| `zoomin/patchcore_adapter.py` | Optional anomalib PatchCore adapter (guarded import; CPU memory-bank) |
 | `zoomin/report.py` | JSON report + annotated overview image |
 | `app/api.py` | FastAPI: `POST /inspect`, `GET /health` |
 | `app/ui.py` | Gradio UI: annotated image, region table, trace viewer |
@@ -139,7 +138,7 @@ $/10K images. Keep the CSVs in `bench/` and paste the table into `docs/REPORT.md
 - [x] Architecture diagram (`docs/architecture.md`)
 - [x] Evaluation incl. failure cases (`docs/REPORT.md` §6)
 - [x] Final report numbers (EC2 runs 2026-10-22: benchmarks + 3-category eval in `docs/REPORT.md`, CSVs in `bench/`)
-- [x] 5-min demo video (v2, 3:54, EC2 numbers landed; `video/out/zoomin-demo.mp4`)
+- [x] 5-min demo video (combined, 4:57, post-fix numbers + ablation; `video/out/zoomin-combined-demo.mp4`)
 
 ## Troubleshooting
 
